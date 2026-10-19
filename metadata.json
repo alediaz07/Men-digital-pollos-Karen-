@@ -1,0 +1,6 @@
+{
+  "name": "Pollo Cervecero Karen — Menú Digital QR y KDS",
+  "description": "Sistema de menú digital por QR en mesa (+10% servicio), pedidos exprés (1 km a la redonda, +₡500 y comprobante SINPE), recepción/caja, pantalla de cocina (KDS) y panel administrativo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
