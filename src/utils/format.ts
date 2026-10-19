@@ -49,11 +49,13 @@ export function compressReceiptImage(file: File, maxWidth = 900, quality = 0.78)
  * Plays a pleasant subtle notification chime using Web Audio API
  * when a new order arrives at Reception or Kitchen KDS.
  */
+let notificationContext: AudioContext | undefined;
 export function playNotificationChime(type: 'reception' | 'kitchen' = 'reception') {
   try {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    const ctx = notificationContext ||= new AudioCtx();
+    if (ctx.state === "suspended") void ctx.resume();
     const now = ctx.currentTime;
 
     const osc1 = ctx.createOscillator();

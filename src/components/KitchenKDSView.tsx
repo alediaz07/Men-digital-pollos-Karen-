@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import {
   ChefHat,
   Clock,
@@ -20,6 +20,8 @@ export const KitchenKDSView: React.FC<KitchenKDSViewProps> = ({
   orders,
   onUpdateOrder,
 }) => {
+  const [, tick] = useState(0);
+  useEffect(() => { const timer = setInterval(() => tick(n => n + 1), 15000); return () => clearInterval(timer); }, []);
   const inKitchenOrders = useMemo(
     () =>
       orders
@@ -226,16 +228,7 @@ export const KitchenKDSView: React.FC<KitchenKDSViewProps> = ({
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    onUpdateOrder(order.id, { status: OrderStatus.DELIVERED })
-                  }
-                  className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span>Marcar Despachado</span>
-                </button>
+                <p className="text-xs text-slate-400">Recepción confirma la entrega.</p>
               </div>
             ))}
           </div>
