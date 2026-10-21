@@ -1,29 +1,29 @@
 export enum CategoryId {
-  PLATO_DEL_DIA = 'plato_del_dia',
-  DESAYUNOS = 'desayunos',
-  CASADOS = 'casados',
-  COMIDA_RAPIDA = 'comida_rapida',
-  REFRESCOS = 'refrescos',
+  PLATO_DEL_DIA = "plato_del_dia",
+  DESAYUNOS = "desayunos",
+  CASADOS = "casados",
+  COMIDA_RAPIDA = "comida_rapida",
+  REFRESCOS = "refrescos",
 }
 
 export enum OrderType {
-  DINE_IN = 'dine_in',
-  EXPRESS = 'express',
+  DINE_IN = "dine_in",
+  EXPRESS = "express",
 }
 
 export enum OrderStatus {
-  PENDING_RECEPTION = 'pending_reception',
-  IN_KITCHEN = 'in_kitchen',
-  READY = 'ready',
-  DELIVERED = 'delivered',
-  CANCELLED = 'cancelled',
+  PENDING_RECEPTION = "pending_reception",
+  IN_KITCHEN = "in_kitchen",
+  READY = "ready",
+  DELIVERED = "delivered",
+  CANCELLED = "cancelled",
 }
 
 export enum PaymentMethod {
-  PENDING_CAJA = 'pendiente_caja',
-  SINPE = 'sinpe',
-  EFECTIVO = 'efectivo',
-  TARJETA = 'tarjeta',
+  PENDING_CAJA = "pendiente_caja",
+  SINPE = "sinpe",
+  EFECTIVO = "efectivo",
+  TARJETA = "tarjeta",
 }
 
 export interface MenuItem {
@@ -39,6 +39,7 @@ export interface MenuItem {
 }
 
 export interface RestaurantTable {
+  qrToken?: string;
   id: string;
   number: number;
   name: string;
@@ -57,6 +58,13 @@ export interface OrderItem {
 }
 
 export interface Order {
+  ownerHash?: string;
+  requestKey?: string;
+  requestHash?: string;
+  isTest?: boolean;
+  coverageStatus?: "pending" | "verified";
+  sinpeVerified?: boolean;
+  paidBy?: string;
   id: string;
   orderNumber: number;
   orderType: OrderType;
@@ -102,6 +110,7 @@ export interface RestaurantSettings {
 }
 
 export interface AppStatePayload {
+  revision?: number;
   menu: MenuItem[];
   tables: RestaurantTable[];
   orders: Order[];

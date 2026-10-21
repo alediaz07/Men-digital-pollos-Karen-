@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+.tools/
+.data/
+.test-data/
+.env
+*.log

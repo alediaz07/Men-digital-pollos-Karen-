@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
+import { api } from '../utils/api';
+import { sales, dateRange, costaRicaDate } from '../utils/sales';
+import { StaffAccounts } from './StaffAccounts';
 import {
   QrCode,
   Printer,
@@ -75,6 +78,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   const [servicePercentInput, setServicePercentInput] = useState(
     settings.serviceChargePercent
   );
+  const [radiusInput, setRadiusInput] = useState(settings.expressRadiusKm);
   const [expressFeeInput, setExpressFeeInput] = useState(settings.expressDeliveryFee);
   const [savedSettingsMsg, setSavedSettingsMsg] = useState(false);
 
@@ -85,7 +89,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     async function generateAllQrs() {
       const map: Record<string, string> = {};
       for (const table of tables) {
-        const targetUrl = `${baseUrl}/?mesa=${table.number}`;
+        const targetUrl = `${baseUrl}/?qr=${encodeURIComponent(table.qrToken || "")}`;
         try {
           map[table.id] = await QRCode.toDataURL(targetUrl, {
             width: 320,
@@ -120,39 +124,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     };
   }, [tables, baseUrl]);
 
+  const [period, setPeriod] = useState('today');
+  const [from, setFrom] = useState(costaRicaDate(new Date().toISOString()));
+  const [to, setTo] = useState(from);
   // Sales KPIs
-  const salesMetrics = useMemo(() => {
-    const validOrders = orders.filter((o) => o.status !== OrderStatus.CANCELLED);
-    const totalRevenue = validOrders.reduce((acc, o) => acc + o.total, 0);
-    const dineInOrders = validOrders.filter((o) => o.orderType === OrderType.DINE_IN);
-    const expressOrders = validOrders.filter((o) => o.orderType === OrderType.EXPRESS);
-    const totalServiceCharge = validOrders.reduce((acc, o) => acc + o.serviceFee, 0);
-    const totalDeliveryFees = validOrders.reduce((acc, o) => acc + o.deliveryFee, 0);
-
-    const bySinpe = validOrders
-      .filter((o) => o.paymentMethod === PaymentMethod.SINPE)
-      .reduce((acc, o) => acc + o.total, 0);
-    const byCash = validOrders
-      .filter((o) => o.paymentMethod === PaymentMethod.EFECTIVO)
-      .reduce((acc, o) => acc + o.total, 0);
-    const byCard = validOrders
-      .filter((o) => o.paymentMethod === PaymentMethod.TARJETA)
-      .reduce((acc, o) => acc + o.total, 0);
-
-    return {
-      totalOrders: validOrders.length,
-      totalRevenue,
-      dineInCount: dineInOrders.length,
-      dineInRevenue: dineInOrders.reduce((acc, o) => acc + o.total, 0),
-      expressCount: expressOrders.length,
-      expressRevenue: expressOrders.reduce((acc, o) => acc + o.total, 0),
-      totalServiceCharge,
-      totalDeliveryFees,
-      bySinpe,
-      byCash,
-      byCard,
-    };
-  }, [orders]);
+  const salesMetrics = useMemo(() => { const [start,end] = dateRange(period,from,to); return sales(orders,start,end); }, [orders,period,from,to]);
 
   const handleAddTable = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,6 +147,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   };
 
   const handleDeleteTable = async (tableId: string) => {
+    if (!window.confirm("¿Eliminar esta mesa y revocar su QR?")) return;
     await onSaveTables(tables.filter((t) => t.id !== tableId));
   };
 
@@ -222,6 +199,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       sinpeNumber: sinpeInput.trim(),
       serviceChargePercent: Number(servicePercentInput),
       expressDeliveryFee: Number(expressFeeInput),
+      expressRadiusKm: Number(radiusInput),
     });
     setSavedSettingsMsg(true);
     setTimeout(() => setSavedSettingsMsg(false), 2500);
@@ -240,7 +218,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-stone-100 p-1 rounded-xl">
+        <div className="flex items-center gap-1.5 bg-stone-100 p-1 rounded-xl flex-wrap">
           <button
             type="button"
             onClick={() => setActiveSubTab('qr')}
@@ -323,11 +301,12 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </div>
           </div>
 
+          <div className="no-print rounded-xl border bg-white p-4 overflow-x-auto"><h2 className="font-bold mb-2">Editar mesas</h2>{tables.map(table => <form key={table.id + table.name + table.capacity} className="flex flex-wrap gap-2 mb-2 items-center" onSubmit={async e => { e.preventDefault(); const data = new FormData(e.currentTarget); await onSaveTables(tables.map(t => t.id === table.id ? {...t, name:String(data.get('name')), capacity:Number(data.get('capacity'))} : t)); }}><span className="text-xs">Mesa {table.number}</span><input aria-label={'Nombre de mesa ' + table.number} name="name" defaultValue={table.name} required maxLength={100} className="border rounded p-2"/><input aria-label={'Capacidad de mesa ' + table.number} name="capacity" type="number" min={1} max={100} defaultValue={table.capacity} required className="border rounded p-2 w-20"/><button className="bg-stone-900 text-white rounded p-2 text-xs">Guardar mesa</button></form>)}</div>
           {/* Printable Grid of Table QR Cards + Express QR Card */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {tables.map((table) => {
               const qrImg = qrDataUrls[table.id];
-              const tableUrl = `${baseUrl}/?mesa=${table.number}`;
+              const tableUrl = `${baseUrl}/?qr=${encodeURIComponent(table.qrToken || "")}`;
 
               return (
                 <div
@@ -374,7 +353,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                   </div>
 
                   {/* Interactive Actions (Hidden on print) */}
-                  <div className="no-print w-full mt-4 pt-3 border-t border-stone-100 flex items-center justify-between gap-2">
+                  <div className="no-print w-full mt-4 pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-2">
                     <button
                       type="button"
                       onClick={() => onSimulateScanTable(table.id)}
@@ -384,6 +363,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                       Probar Mesa
                     </button>
 
+                    <button type="button" title="Revocar QR anterior y generar uno nuevo" className="border rounded p-2 text-xs" onClick={async () => { if (window.confirm('¿Regenerar QR? El enlace anterior dejará de funcionar.')) { await api('/api/tables/' + table.id + '/rotate','POST',{}); location.reload(); } }}>Regenerar QR</button>
+                    <button type="button" className="border rounded p-2 text-xs" onClick={() => onSaveTables(tables.map(t => t.id === table.id ? {...t,active:!t.active} : t))}>{table.active ? 'Desactivar' : 'Activar'}</button>
                     {qrImg && (
                       <a
                         href={qrImg}
@@ -578,7 +559,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => onDeleteMenuItem(item.id)}
+                            onClick={() => { if (window.confirm("¿Eliminar este platillo del catálogo?")) onDeleteMenuItem(item.id); }}
                             className="p-2 rounded-lg text-stone-400 hover:text-red-600 hover:bg-red-50"
                             title="Eliminar platillo"
                           >
@@ -598,17 +579,21 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
       {/* SUB-VIEW 3: SALES SUMMARY & SETTINGS */}
       {activeSubTab === 'sales' && (
         <div className="space-y-6">
+          <div className="flex flex-wrap gap-3 items-center"><label>Período <select className="border p-2 rounded" value={period} onChange={e => setPeriod(e.target.value)}><option value="today">Hoy</option><option value="yesterday">Ayer</option><option value="week">Últimos 7 días</option><option value="month">Mes actual</option><option value="custom">Rango personalizado</option></select></label>
+          {period === 'custom' && <><label>Desde <input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Hasta <input type="date" min={from} value={to} onChange={e=>setTo(e.target.value)}/></label></>}
+          <span className="text-xs">America/Costa_Rica · Cobros por fecha de pago</span></div>
+          <div className="bg-white border rounded p-4 text-sm">{salesMetrics.totalOrders} pedidos creados · {salesMetrics.paidCount} cobros · {salesMetrics.pendingCount} pendientes ({formatColones(salesMetrics.pendingTotal)}) · {salesMetrics.cancelledCount} cancelados</div>
           {/* KPI Strip */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-stone-200">
               <span className="text-xs font-semibold text-stone-500">
-                Ventas Totales Registradas
+                Ventas cobradas
               </span>
               <div className="font-mono text-2xl font-extrabold text-stone-900 mt-1 tabular-nums">
                 {formatColones(salesMetrics.totalRevenue)}
               </div>
               <span className="text-xs text-stone-500 mt-1 block">
-                {salesMetrics.totalOrders} pedidos activos/completados
+                {salesMetrics.paidCount} pagos recibidos
               </span>
             </div>
 
@@ -657,6 +642,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             </div>
           </div>
 
+          <div className="overflow-x-auto bg-white border rounded-xl p-4"><h2 className="font-bold mb-3">Historial de pedidos por fecha de creación</h2><table className="w-full text-sm text-left"><thead><tr><th>Pedido</th><th>Fecha CR</th><th>Estado</th><th>Pago</th><th>Total</th></tr></thead><tbody>{salesMetrics.history.map(o => <tr key={o.id} className="border-t"><td className="p-2">#{o.orderNumber}</td><td>{costaRicaDate(o.createdAt)}</td><td>{o.status}</td><td>{o.isPaid ? 'Pagado' : 'Pendiente'}</td><td>{formatColones(o.total)}</td></tr>)}</tbody></table></div>
+          <StaffAccounts/>
           {/* Tarifas & Restaurant Configuration */}
           <form
             onSubmit={handleSaveGeneralSettings}
@@ -677,6 +664,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
               )}
             </div>
 
+            <label className="block text-xs font-bold">Radio habitual de entrega (km)<input type="number" min={0.1} max={100} step={0.1} value={radiusInput} onChange={e=>setRadiusInput(Number(e.target.value))} className="block border rounded p-2 mt-1"/></label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-bold text-stone-700 mb-1">
@@ -696,7 +684,8 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
                 <input
                   type="number"
                   min={0}
-                  max={25}
+                  max={10}
+                  disabled
                   value={servicePercentInput}
                   onChange={(e) => setServicePercentInput(Number(e.target.value))}
                   className="w-full px-3.5 py-2 border border-stone-200 rounded-xl text-sm font-mono"

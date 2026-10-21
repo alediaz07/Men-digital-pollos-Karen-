@@ -42,8 +42,6 @@ interface CustomerMenuViewProps {
   orders: Order[];
   selectedTableId: string | null;
   initialMode: OrderType;
-  onSelectTable: (tableId: string | null) => void;
-  onSelectMode: (mode: OrderType) => void;
   onSubmitOrder: (orderPayload: Partial<Order>) => Promise<Order>;
 }
 
@@ -62,8 +60,6 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
   orders,
   selectedTableId,
   initialMode,
-  onSelectTable,
-  onSelectMode,
   onSubmitOrder,
 }) => {
   const [activeCategory, setActiveCategory] = useState<CategoryId | 'all'>('all');
@@ -93,29 +89,8 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Track customer's submitted order IDs in localStorage so they see real-time status
-  const [myOrderIds, setMyOrderIds] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('karen_my_orders');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  const activeTable = useMemo(
-    () => tables.find((t) => t.id === selectedTableId) || tables[0] || null,
-    [tables, selectedTableId]
-  );
-
-  const myActiveOrders = useMemo(() => {
-    return orders.filter(
-      (o) =>
-        myOrderIds.includes(o.id) &&
-        o.status !== OrderStatus.DELIVERED &&
-        o.status !== OrderStatus.CANCELLED
-    );
-  }, [orders, myOrderIds]);
+  const activeTable = useMemo(() => tables.find(t => t.id === selectedTableId) || null, [tables, selectedTableId]);
+  const myActiveOrders = orders.slice(0, 10);
 
   const platoDelDia = useMemo(
     () => menu.find((m) => m.category === CategoryId.PLATO_DEL_DIA && m.available),
@@ -228,6 +203,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     setCheckoutError(null);
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 8 * 1024 * 1024) { setCheckoutError("Usa una imagen JPG, PNG o WEBP de hasta 8 MB."); return; }
     setIsUploadingReceipt(true);
     try {
       const compressed = await compressReceiptImage(file);
@@ -250,7 +226,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
 
     if (initialMode === OrderType.DINE_IN) {
       if (!activeTable) {
-        setCheckoutError('Por favor selecciona el número de tu mesa.');
+        setCheckoutError('Escanea un QR de mesa vigente.');
         return;
       }
     } else {
@@ -265,12 +241,6 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
       }
       if (!deliveryAddress.trim()) {
         setCheckoutError('Por favor escribe tu dirección exacta y señas.');
-        return;
-      }
-      if (!withinOneKmConfirmed) {
-        setCheckoutError(
-          `El Servicio Exprés aplica únicamente hasta ${settings.expressRadiusKm} km a la redonda. Confirma la casilla de cobertura.`
-        );
         return;
       }
       if (expressPaymentMethod === PaymentMethod.SINPE && !sinpeReceiptImage) {
@@ -315,14 +285,6 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
             : undefined,
         isPaid: false,
       });
-
-      const updatedIds = [created.id, ...myOrderIds];
-      setMyOrderIds(updatedIds);
-      try {
-        localStorage.setItem('karen_my_orders', JSON.stringify(updatedIds));
-      } catch {
-        // ignore storage errors
-      }
 
       // Reset cart and close drawer
       setCart([]);
@@ -370,64 +332,10 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
               </div>
             </div>
 
-            {/* Mode Switcher: En Mesa (QR) vs Servicio Exprés (1 km) */}
-            <div className="bg-[#991B1B]/70 p-2 rounded-2xl border border-red-400/30 flex flex-col gap-2.5 sm:min-w-[330px]">
-              <div className="grid grid-cols-2 gap-1.5 bg-[#7F1D1D] p-1 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => onSelectMode(OrderType.DINE_IN)}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
-                    initialMode === OrderType.DINE_IN
-                      ? 'bg-white text-[#C81E1E] shadow-sm'
-                      : 'text-red-100 hover:text-white'
-                  }`}
-                >
-                  <Utensils className="w-4 h-4" />
-                  En Mesa (QR)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSelectMode(OrderType.EXPRESS)}
-                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs sm:text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
-                    initialMode === OrderType.EXPRESS
-                      ? 'bg-white text-[#C81E1E] shadow-sm'
-                      : 'text-red-100 hover:text-white'
-                  }`}
-                >
-                  <Bike className="w-4 h-4" />
-                  Exprés (≤ {settings.expressRadiusKm} km)
-                </button>
-              </div>
-
-              {initialMode === OrderType.DINE_IN ? (
-                <div className="flex items-center justify-between gap-3 px-2 py-1 text-xs text-red-50">
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                    <span>Ubicación activa:</span>
-                  </div>
-                  <select
-                    aria-label="Seleccionar mesa"
-                    value={activeTable?.id || ''}
-                    onChange={(e) => onSelectTable(e.target.value)}
-                    className="bg-white/15 hover:bg-white/25 text-white font-semibold rounded-lg px-2.5 py-1 text-xs border border-white/25 focus:outline-none"
-                  >
-                    {tables
-                      .filter((t) => t.active)
-                      .map((t) => (
-                        <option key={t.id} value={t.id} className="text-stone-900">
-                          {t.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between gap-2 px-2 py-1 text-xs text-amber-200">
-                  <span>Cobertura exclusiva: {settings.expressRadiusKm} km a la redonda</span>
-                  <span className="font-mono font-semibold">
-                    +{formatColones(settings.expressDeliveryFee)} envío
-                  </span>
-                </div>
-              )}
+            <div className="rounded-2xl bg-[#991B1B] p-4 text-sm">
+              <strong>{initialMode === OrderType.DINE_IN ? activeTable?.name : 'Servicio Exprés'}</strong>
+              <p>{initialMode === OrderType.DINE_IN ? 'Mesa identificada por QR · Servicio 10%' : 'Sin recargo de mesa · Entrega ' + formatColones(settings.expressDeliveryFee)}</p>
+              {initialMode === OrderType.EXPRESS && <p className="text-xs mt-2">La recepción verificará la cobertura de tu dirección.</p>}
             </div>
           </div>
         </div>
@@ -451,6 +359,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {myActiveOrders.map((ord) => {
+                const finished = ord.status === OrderStatus.DELIVERED || ord.status === OrderStatus.CANCELLED;
                 const isReception = ord.status === OrderStatus.PENDING_RECEPTION;
                 const isKitchen = ord.status === OrderStatus.IN_KITCHEN;
                 const isReady = ord.status === OrderStatus.READY;
@@ -470,8 +379,9 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
                       <span>{getElapsedMinutes(ord.createdAt)}</span>
                     </div>
 
+                    {finished && <p className="font-bold py-2">{ord.status === OrderStatus.DELIVERED ? 'Pedido entregado' : 'Pedido cancelado'}</p>}
                     {/* Step Progress Bar */}
-                    <div className="grid grid-cols-3 gap-2 my-2.5">
+                    <div hidden={finished} className="grid grid-cols-3 gap-2 my-2.5">
                       <div
                         className={`rounded-lg p-2 text-center border text-xs font-medium ${
                           isReception
@@ -891,40 +801,6 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
               onSubmit={handlePlaceOrder}
               className="flex-1 overflow-y-auto p-5 space-y-6"
             >
-              {/* Mode Switch inside Checkout */}
-              <div className="grid grid-cols-2 gap-2 p-1 bg-stone-100 rounded-xl">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelectMode(OrderType.DINE_IN);
-                    setCheckoutError(null);
-                  }}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    initialMode === OrderType.DINE_IN
-                      ? 'bg-white text-stone-900 shadow-2xs'
-                      : 'text-stone-600'
-                  }`}
-                >
-                  <Utensils className="w-3.5 h-3.5" />
-                  En Mesa (+{settings.serviceChargePercent}%)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSelectMode(OrderType.EXPRESS);
-                    setCheckoutError(null);
-                  }}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    initialMode === OrderType.EXPRESS
-                      ? 'bg-white text-[#C81E1E] shadow-2xs'
-                      : 'text-stone-600'
-                  }`}
-                >
-                  <Bike className="w-3.5 h-3.5" />
-                  Exprés (+{formatColones(settings.expressDeliveryFee)})
-                </button>
-              </div>
-
               {/* Cart Items List */}
               <div className="space-y-3">
                 <h3 className="text-xs font-bold text-stone-500 uppercase tracking-wider">
@@ -988,19 +864,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
                     <label className="text-xs font-bold text-stone-700">
                       Mesa asignada (vía QR):
                     </label>
-                    <select
-                      value={activeTable?.id || ''}
-                      onChange={(e) => onSelectTable(e.target.value)}
-                      className="px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-xs font-bold text-stone-900"
-                    >
-                      {tables
-                        .filter((t) => t.active)
-                        .map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                    </select>
+                    <strong className="text-sm">{activeTable?.name}</strong>
                   </div>
 
                   <div>
@@ -1017,7 +881,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
                   </div>
 
                   <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 leading-relaxed">
-                    <strong>Pago en Caja:</strong> Al confirmar, tu pedido se enviará directo a Recepción y Cocina. Puedes pagar al final en la caja con <strong>Efectivo, SINPE Móvil ({settings.sinpeNumber}) o Tarjeta</strong>.
+                    <strong>Pago en Caja:</strong> Al confirmar, tu pedido se enviará a Recepción para su aprobación. Puedes pagar al final en la caja con <strong>Efectivo, SINPE Móvil ({settings.sinpeNumber}) o Tarjeta</strong>.
                   </div>
                 </div>
               ) : (
@@ -1074,18 +938,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
                     />
                   </div>
 
-                  <label className="flex items-start gap-2.5 cursor-pointer select-none pt-1">
-                    <input
-                      type="checkbox"
-                      checked={withinOneKmConfirmed}
-                      onChange={(e) => setWithinOneKmConfirmed(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 accent-[#C81E1E] rounded"
-                    />
-                    <span className="text-xs font-medium text-stone-700">
-                      Confirmo que mi ubicación de entrega se encuentra dentro de{' '}
-                      <strong>{settings.expressRadiusKm} km a la redonda</strong> de Pollo Cervecero Karen.
-                    </span>
-                  </label>
+                  <p className="text-xs text-amber-900 bg-amber-50 p-3 rounded">Cobertura pendiente de verificación por recepción. Radio habitual: {settings.expressRadiusKm} km. La dirección será revisada antes de aprobar el envío.</p>
 
                   {/* Payment Method Selector (Express Only: SINPE Móvil or Efectivo) */}
                   <div className="pt-2 border-t border-stone-200 space-y-3">

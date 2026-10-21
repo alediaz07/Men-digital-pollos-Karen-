@@ -24,6 +24,7 @@ import {
   RestaurantSettings,
 } from '../types';
 import { formatColones, getElapsedMinutes } from '../utils/format';
+import { costaRicaDate } from '../utils/sales';
 
 interface ReceptionViewProps {
   orders: Order[];
@@ -106,7 +107,9 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
   ]);
 
   const handleSendToKitchen = async (order: Order) => {
+    if (order.orderType === OrderType.EXPRESS && order.coverageStatus !== "verified" && !window.confirm("¿Verificaste la dirección y confirmas que se puede realizar esta entrega?")) return;
     await onUpdateOrder(order.id, {
+      coverageStatus: order.orderType === OrderType.EXPRESS ? "verified" : undefined,
       status: OrderStatus.IN_KITCHEN,
     });
   };
@@ -129,6 +132,8 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
   const handleConfirmCajaPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cashierOrder) return;
+    if (selectedCajaMethod === PaymentMethod.EFECTIVO && cajaCashReceived && Number(cajaCashReceived) < cashierOrder.total) throw new Error('El efectivo recibido es menor al total.');
+    if (selectedCajaMethod === PaymentMethod.SINPE && !window.confirm('¿Verificaste el abono en la cuenta bancaria? La captura por sí sola no confirma el pago.')) return;
     await onUpdateOrder(cashierOrder.id, {
       paymentMethod: selectedCajaMethod,
       sinpeReference:
@@ -136,10 +141,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
           ? cajaSinpeRef.trim() || cashierOrder.sinpeReference
           : cashierOrder.sinpeReference,
       isPaid: true,
-      status:
-        cashierOrder.status === OrderStatus.READY
-          ? OrderStatus.DELIVERED
-          : cashierOrder.status,
+      sinpeVerified: selectedCajaMethod === PaymentMethod.SINPE,
     });
     setCashierOrder(null);
   };
@@ -186,7 +188,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
           <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
             <div className="text-xs text-emerald-800 font-medium">Cerrados Hoy</div>
             <div className="font-mono text-2xl font-bold text-emerald-900 tabular-nums mt-0.5">
-              {historyOrders.filter((o) => o.isPaid).length}
+              {historyOrders.filter((o) => o.isPaid && costaRicaDate(o.paidAt || o.createdAt) === costaRicaDate(new Date().toISOString())).length}
             </div>
           </div>
         </div>
@@ -449,6 +451,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                       </span>
                     </div>
 
+                    {order.orderType === OrderType.EXPRESS && <p className="text-xs font-bold text-amber-800">Cobertura: {order.coverageStatus === 'verified' ? 'Verificada por recepción' : 'Pendiente de verificar dirección'}</p>}
                     {order.cashChangeFor && order.cashChangeFor > order.total && (
                       <div className="text-xs text-stone-700 font-mono pt-0.5">
                         Paga con {formatColones(order.cashChangeFor)} · Vuelto:{' '}
@@ -506,7 +509,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                       <button
                         type="button"
                         onClick={() =>
-                          onUpdateOrder(order.id, { status: OrderStatus.CANCELLED })
+                          window.confirm("¿Cancelar este pedido?") && onUpdateOrder(order.id, { status: OrderStatus.CANCELLED })
                         }
                         title="Cancelar pedido"
                         className="p-2.5 rounded-xl border border-stone-200 text-stone-500 hover:text-red-600 hover:bg-red-50"
@@ -533,8 +536,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                         </button>
                       )}
 
-                      {(order.status === OrderStatus.READY ||
-                        order.status === OrderStatus.IN_KITCHEN) && (
+                      {(order.status === OrderStatus.READY) && (
                         <button
                           type="button"
                           onClick={() =>
@@ -600,7 +602,8 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                   <button
                     type="button"
                     onClick={async () => {
-                      await onUpdateOrder(previewReceiptOrder.id, { isPaid: true });
+                      if (!window.confirm('¿Confirmas que el abono SINPE está verificado en la cuenta bancaria?')) return;
+                      await onUpdateOrder(previewReceiptOrder.id, { isPaid: true, sinpeVerified: true });
                       setPreviewReceiptOrder(null);
                     }}
                     className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer"
@@ -612,7 +615,10 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                   <button
                     type="button"
                     onClick={async () => {
+                      if (!window.confirm('¿Verificaste el abono SINPE y la cobertura de la dirección de entrega?')) return;
                       await onUpdateOrder(previewReceiptOrder.id, {
+                        coverageStatus: previewReceiptOrder.orderType === OrderType.EXPRESS ? 'verified' : undefined,
+                        sinpeVerified: true,
                         isPaid: true,
                         status: OrderStatus.IN_KITCHEN,
                       });
