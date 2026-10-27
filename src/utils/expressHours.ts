@@ -13,7 +13,7 @@ export function expressAvailability(config: ExpressSchedule, now = new Date()) {
   const dow: Record<string,number> = {Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
   const day = dow[val("weekday")];
   const minute = Number(val("hour"))*60 + Number(val("minute"));
-  const parse = (value: string) => { const m = /^(?:[01]\\d|2[0-3]):[0-5]\\d$/.exec(value); return m ? Number(value.slice(0,2))*60+Number(value.slice(3)) : NaN; };
+  const parse = (value: string) => { const m = /^(?:[01]\d|2[0-3]):[0-5]\d$/.exec(value); return m ? Number(value.slice(0,2))*60+Number(value.slice(3)) : NaN; };
   const start = parse(config.expressOpen || "07:00");
   const end = parse(config.expressClose || "16:00");
   const days = config.expressDays || [1,2,3,4,5];
