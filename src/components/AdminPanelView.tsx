@@ -601,6 +601,10 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           {period === 'custom' && <><label>Desde <input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>Hasta <input type="date" min={from} value={to} onChange={e=>setTo(e.target.value)}/></label></>}
           <span className="text-xs">America/Costa_Rica · Cobros por fecha de pago</span></div>
           <div className="bg-white border rounded p-4 text-sm">{salesMetrics.totalOrders} pedidos creados · {salesMetrics.paidCount} cobros · {salesMetrics.pendingCount} pendientes ({formatColones(salesMetrics.pendingTotal)}) · {salesMetrics.cancelledCount} cancelados</div>
+          <div className="bg-white border rounded-xl p-4 flex justify-between items-center gap-4">
+            <div><strong>Ventas por ventana</strong><p className="text-sm text-stone-600">{salesMetrics.windowCount} ventas cobradas, sin 10% ni tarifa de envío</p></div>
+            <strong className="text-xl text-red-700">{formatColones(salesMetrics.windowRevenue)}</strong>
+          </div>
           {/* KPI Strip */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-stone-200">
