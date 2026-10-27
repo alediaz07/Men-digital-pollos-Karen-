@@ -107,7 +107,12 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
   ]);
 
   const handleSendToKitchen = async (order: Order) => {
-    if (order.orderType === OrderType.EXPRESS && order.coverageStatus !== "verified" && !window.confirm("¿Verificaste la dirección y confirmas que se puede realizar esta entrega?")) return;
+    if (order.orderType === OrderType.EXPRESS && order.paymentMethod === PaymentMethod.SINPE && !order.isPaid) {
+      setPreviewReceiptOrder(order);
+      window.alert("Verifica primero el abono SINPE en el banco, registra su referencia y confirma cobertura antes de enviarlo a cocina.");
+      return;
+    }
+    if (order.orderType === OrderType.EXPRESS && order.coverageStatus !== "verified" && !window.confirm("¿Verificaste que la dirección está dentro del kilómetro de cobertura?")) return;
     await onUpdateOrder(order.id, {
       coverageStatus: order.orderType === OrderType.EXPRESS ? "verified" : undefined,
       status: OrderStatus.IN_KITCHEN,
@@ -442,6 +447,8 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                     <div className="pt-1.5 flex items-center justify-between text-xs">
                       <span className="text-stone-600">
                         Pago: <strong>{getPaymentLabel(order.paymentMethod)}</strong>
+                        {order.orderType === OrderType.EXPRESS && order.paymentMethod === PaymentMethod.EFECTIVO && order.cashChangeFor != null && <span className="block font-bold">Efectivo anunciado: {formatColones(order.cashChangeFor)} · Vuelto estimado: {formatColones(Math.max(0,order.cashChangeFor-order.total))}</span>}
+                        {order.orderType === OrderType.DINE_IN && !order.isPaid && <span className="block text-xs">Cobro agrupado por mesa desde la pestaña Caja del administrador.</span>}
                       </span>
                       <span
                         className={`font-bold ${
@@ -522,7 +529,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
 
                   {order.status !== OrderStatus.CANCELLED && (
                     <div className="flex items-center gap-2">
-                      {!order.isPaid && (
+                      {!order.isPaid && order.orderType !== OrderType.DINE_IN && (
                         <button
                           type="button"
                           onClick={() => handleOpenCajaModal(order)}
