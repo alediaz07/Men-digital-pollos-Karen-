@@ -8,7 +8,17 @@ import {
 } from "../src/data/initialData.ts";
 import type { AppStatePayload } from "../src/types.ts";
 import { token, type Staff } from "./security.ts";
+export type InventoryUnit = "g" | "kg" | "ml" | "l" | "unidad";
+export interface InventoryIngredient { id: string; name: string; unit: InventoryUnit; quantity: number; minimum: number; }
+export interface RecipePart { ingredientId: string; quantity: number; }
+export interface InventoryRecipe { menuItemId: string; parts: RecipePart[]; }
+export interface InventoryMovement { id: string; ingredientId: string; delta: number; reason: string; orderId?: string; createdAt: string; by: string; }
+export interface AuditEvent { id: string; orderId: string; type: string; actor: string; at: string; details: string; }
 export interface Store extends AppStatePayload {
+  inventory: InventoryIngredient[];
+  recipes: InventoryRecipe[];
+  stockMovements: InventoryMovement[];
+  auditLog: AuditEvent[];
   nextOrderNumber: number;
   users: Staff[];
   csrfSecret: string;
@@ -52,6 +62,10 @@ export function loadStore(): Store {
   if (existing)
     fs.copyFileSync(dataFile, `${dataFile}.pre-migration-${Date.now()}.bak`);
   store.settings.serviceChargePercent = 10;
+  store.inventory ||= [];
+  store.recipes ||= [];
+  store.stockMovements ||= [];
+  store.auditLog ||= [];
   store.users ||= [];
   store.csrfSecret ||= token();
   store.revision ||= 0;
