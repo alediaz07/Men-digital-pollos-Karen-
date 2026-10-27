@@ -96,7 +96,7 @@ test(
       await expect(
         publicPage.getByRole("link", { name: "Administración", exact: true }),
       ).toHaveCount(0);
-      await expect(publicPage).toHaveURL(/\\/expres$/);
+      await expect(publicPage).toHaveURL(new RegExp("/expres$"));
       await expect(publicPage.getByLabel("Usuario", { exact: true })).toHaveCount(0);
       await expect(publicPage.getByRole("combobox")).toHaveCount(0);
       assert.ok(
