@@ -64,6 +64,7 @@ export interface Order {
   isTest?: boolean;
   coverageStatus?: "pending" | "verified";
   sinpeVerified?: boolean;
+  cancellationReason?: string;
   paidBy?: string;
   id: string;
   orderNumber: number;
