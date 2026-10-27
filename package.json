@@ -12,7 +12,9 @@
     "lint": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "setup-user": "tsx scripts/create-user.ts",
-    "test:browser": "tsx --test tests/browser.spec.ts"
+    "test:browser": "tsx --test tests/browser.spec.ts",
+    "backup": "node scripts/backup-store.mjs",
+    "restore": "node scripts/restore-store.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
