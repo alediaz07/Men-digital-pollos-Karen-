@@ -174,7 +174,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
             Recepción de Pedidos y Caja
           </h1>
           <p className="text-sm text-stone-600 mt-0.5">
-            Aprueba pedidos entrantes para enviarlos a cocina, verifica capturas SINPE de Exprés y realiza el cobro en caja de las mesas.
+            Autoriza las órdenes de mesa, ventana y exprés para cocina. La caja de Administración reúne los tiquetes de cada mesa y calcula el vuelto.
           </p>
         </div>
 
@@ -298,7 +298,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
               : 'Aún no hay pedidos cerrados en el historial'}
           </h3>
           <p className="text-xs text-stone-500 max-w-md mx-auto">
-            Cuando un cliente escanee el código QR de su mesa o envíe un pedido Exprés desde el menú digital, aparecerá aquí al instante.
+            Los pedidos de mesa y exprés llegarán aquí para autorización; los pedidos de ventana se registran desde el POS.
           </p>
         </div>
       ) : (
@@ -328,7 +328,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                         ) : (
                           <span className="inline-flex items-center gap-1 text-xs font-bold text-stone-900">
                             <Utensils className="w-3.5 h-3.5 text-stone-700" />
-                            {order.tableName || 'En Mesa'}
+                            {order.orderType === OrderType.WINDOW ? 'VENTANA' : order.tableName || 'En Mesa'}
                           </span>
                         )}
                       </div>
