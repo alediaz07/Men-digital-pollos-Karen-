@@ -575,6 +575,7 @@ test("Comprobantes privados, acceso público explícito y WebSocket rechaza otro
   });
 });
 test("Inventario: recetas, descuento único al aprobar y bloqueo por falta de insumos", async () => {
+  const liveTableToken = (await admin.req("/api/state")).data.tables.find((t:any)=>t.number===3).qrToken;
   const created = await admin.req("/api/admin/inventory/ingredient", "POST", {
     name: "Pollo de prueba", unit: "g", quantity: 400, minimum: 50,
   });
@@ -584,7 +585,7 @@ test("Inventario: recetas, descuento único al aprobar y bloqueo por falta de in
     parts: [{ ingredientId, quantity: 200 }],
   });
   assert.equal(recipe.status, 200, JSON.stringify(recipe.data));
-  const first = await bob.req("/api/orders", "POST", {items:[item], tableToken}, {
+  const first = await bob.req("/api/orders", "POST", {items:[item], tableToken: liveTableToken}, {
     "Idempotency-Key": "inventory-test-0000000001",
   });
   assert.equal(first.status, 201, JSON.stringify(first.data));
@@ -592,7 +593,7 @@ test("Inventario: recetas, descuento único al aprobar y bloqueo por falta de in
   assert.equal(approve.status, 200, JSON.stringify(approve.data));
   let snapshot = await admin.req("/api/admin/inventory");
   assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 200);
-  const second = await bob.req("/api/orders", "POST", {items:[{...item,quantity:2}],tableToken}, {
+  const second = await bob.req("/api/orders", "POST", {items:[{...item,quantity:2}],tableToken: liveTableToken}, {
     "Idempotency-Key": "inventory-test-0000000002",
   });
   assert.equal(second.status, 201);
