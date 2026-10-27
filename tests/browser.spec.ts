@@ -96,6 +96,8 @@ test(
       await expect(
         publicPage.getByRole("link", { name: "Administración", exact: true }),
       ).toHaveCount(0);
+      await expect(publicPage).toHaveURL(/\\/expres$/);
+      await expect(publicPage.getByLabel("Usuario", { exact: true })).toHaveCount(0);
       await expect(publicPage.getByRole("combobox")).toHaveCount(0);
       assert.ok(
         await publicPage.evaluate(
@@ -220,6 +222,11 @@ test(
         path: ".tools/screenshots/admin-sales.png",
         fullPage: true,
       });
+      await adm.getByRole("button", { name: "Punto de venta" }).click();
+      await adm.getByRole("button", { name: /POLLO FRITO/ }).first().click();
+      await adm.getByRole("button", { name: "Autorizar y enviar a cocina" }).click();
+      await expect(adm.getByRole("status").filter({hasText:/Tiquete #/})).toBeVisible();
+      await expect(kds.getByText("VENTANA", {exact:true}).first()).toBeVisible();
       for (const width of [375, 768, 1280]) {
         await publicPage.setViewportSize({ width, height: 900 });
         assert.ok(
