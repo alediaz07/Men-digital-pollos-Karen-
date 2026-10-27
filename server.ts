@@ -4,10 +4,12 @@ import express from "express";
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import path from "node:path";
+import fs from "node:fs";
 import {
   loadStore,
   writeStore,
   acquireLock,
+  dataDir,
   type Store,
   type InventoryIngredient,
   type InventoryRecipe,
@@ -347,10 +349,16 @@ app.get("/api/table/:token", (req, res) => {
 app.get("/api/orders/:id/receipt", permit("admin", "reception"), (req, res) => {
   const order = store.orders.find((o) => o.id === req.params.id);
   if (!order?.sinpeReceiptImage) return res.sendStatus(404);
-  const match =
-    /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(
-      order.sinpeReceiptImage,
-    );
+  if (order.sinpeReceiptImage.startsWith("private:")) {
+    const name = order.sinpeReceiptImage.slice(8);
+    if (!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(name)) return res.sendStatus(404);
+    const file = path.join(dataDir, "receipts", name);
+    if (!fs.existsSync(file)) return res.sendStatus(404);
+    res.type(path.extname(file)).send(fs.readFileSync(file));
+    return;
+  }
+  // Legacy receipts are readable for migration; new receipts are always private files.
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(order.sinpeReceiptImage);
   if (!match) return res.sendStatus(404);
   res.type(match[1]).send(Buffer.from(match[2], "base64"));
 });
@@ -451,6 +459,8 @@ app.post("/api/orders", (req, res) => {
     cashChangeFor < subtotal + serviceFee + deliveryFee
   )
     fail("El monto para vuelto es menor al total.");
+  const receiptMatch = receipt?.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
+  const receiptName = receiptMatch ? `${randomUUID()}.${receiptMatch[1] === "jpeg" ? "jpg" : receiptMatch[1]}` : undefined;
   const order: Order = {
     id: randomUUID(),
     orderNumber: store.nextOrderNumber,
@@ -467,7 +477,7 @@ app.post("/api/orders", (req, res) => {
     total: subtotal + serviceFee + deliveryFee,
     paymentMethod: table ? PaymentMethod.PENDING_CAJA : b.paymentMethod,
     sinpeReference: text(b.sinpeReference, 100),
-    sinpeReceiptImage: receipt,
+    sinpeReceiptImage: receiptName ? `private:${receiptName}` : undefined,
     cashChangeFor,
     isPaid: false,
     status: OrderStatus.PENDING_RECEPTION,
@@ -478,10 +488,17 @@ app.post("/api/orders", (req, res) => {
     requestHash,
     isTest: process.env.TEST_MODE === "true",
   };
-  commit((s) => {
-    s.nextOrderNumber++;
-    s.orders.unshift(order);
-  });
+  const receiptFile = receiptName ? path.join(dataDir, "receipts", receiptName) : undefined;
+  if (receiptFile && receiptMatch) {
+    fs.mkdirSync(path.dirname(receiptFile), {recursive:true,mode:0o700});
+    fs.writeFileSync(receiptFile, Buffer.from(receiptMatch[2], "base64"), {flag:"wx",mode:0o600});
+  }
+  try {
+    commit((s) => { s.nextOrderNumber++; s.orders.unshift(order); });
+  } catch (err) {
+    if (receiptFile) fs.rmSync(receiptFile, {force:true});
+    throw err;
+  }
   res.status(201).json(publicOrder(order));
 });
 app.patch("/api/orders/:id", operations, (req, res) => {
