@@ -42,6 +42,7 @@ interface CustomerMenuViewProps {
   orders: Order[];
   selectedTableId: string | null;
   initialMode: OrderType;
+  expressOpen?: boolean;
   onSubmitOrder: (orderPayload: Partial<Order>) => Promise<Order>;
 }
 
@@ -60,6 +61,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
   orders,
   selectedTableId,
   initialMode,
+  expressOpen = true,
   onSubmitOrder,
 }) => {
   const [activeCategory, setActiveCategory] = useState<CategoryId | 'all'>('all');
@@ -137,7 +139,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
   );
 
   const handleOpenItemModal = (item: MenuItem) => {
-    if (!item.available) return;
+    if (!item.available || (initialMode === OrderType.EXPRESS && !expressOpen)) return;
     setCustomizingItem(item);
     setSelectedVariant(item.variants && item.variants.length > 0 ? item.variants[0] : '');
     setItemNotes('');
@@ -218,6 +220,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     setCheckoutError(null);
+    if (initialMode === OrderType.EXPRESS && !expressOpen) { setCheckoutError('Servicio exprés cerrado. Atendemos de lunes a viernes, 7:00 a.m. a 4:00 p.m.'); return; }
 
     if (cart.length === 0) {
       setCheckoutError('Tu pedido está vacío. Agrega al menos un platillo del menú.');
@@ -243,6 +246,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
         setCheckoutError('Por favor escribe tu dirección exacta y señas.');
         return;
       }
+      if (expressPaymentMethod === PaymentMethod.EFECTIVO && (!cashChangeFor || !Number.isInteger(Number(cashChangeFor)) || Number(cashChangeFor)<totalAmount)) { setCheckoutError('Indica con cuánto efectivo pagarás (mínimo el total).'); return; }
       if (expressPaymentMethod === PaymentMethod.SINPE && !sinpeReceiptImage) {
         setCheckoutError(
           'Por favor adjunta la captura de pantalla del comprobante de SINPE Móvil para enviar tu pedido exprés.'
@@ -341,6 +345,11 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
         </div>
       </section>
 
+      {initialMode === OrderType.EXPRESS && !expressOpen && <div role="status" className="sticky top-0 z-30 bg-amber-50 border-b-2 border-amber-400 px-5 py-5 text-center">
+        <h2 className="text-2xl font-extrabold text-amber-950">Servicio exprés cerrado</h2>
+        <p className="font-semibold text-amber-900">Pedidos de lunes a viernes de 7:00 a.m. a 4:00 p.m. (Costa Rica). Sábados y domingos cerrado.</p>
+        <p className="text-sm mt-1 text-amber-900">Puedes consultar el menú, pero no enviar nuevos pedidos fuera de horario.</p>
+      </div>}
       {/* Active Order Live Status Tracker (when customer has placed an order) */}
       {myActiveOrders.length > 0 && (
         <section className="max-w-6xl mx-auto px-4 sm:px-6 mt-5">
@@ -1077,6 +1086,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
                           step="100"
                           value={cashChangeFor}
                           onChange={(e) => setCashChangeFor(e.target.value)}
+                          required
                           placeholder={`Ej. 5000 o 10000 (Total: ${formatColones(totalAmount)})`}
                           className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg text-sm font-mono"
                         />
@@ -1135,7 +1145,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
               <button
                 type="submit"
                 form="checkout-form"
-                disabled={isSubmitting || isUploadingReceipt}
+                disabled={isSubmitting || isUploadingReceipt || (initialMode === OrderType.EXPRESS && !expressOpen)}
                 className="w-full h-12 rounded-xl bg-[#C81E1E] hover:bg-[#A91919] disabled:opacity-50 text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
                 {isSubmitting ? (
