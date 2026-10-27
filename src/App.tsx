@@ -39,6 +39,7 @@ export default function App() {
   const soundRef = useRef(false);
   const ordersRef = useRef<Order[] | null>(null);
   const allowed = user && (user.role === "admin" || user.role === desiredRole);
+  const readyOrders = internal && desiredRole !== "kitchen" ? (state?.orders || []).filter(o=>o.status==="ready") : [];
   useEffect(() => {
     const reject = (event: PromiseRejectionEvent) => {
       event.preventDefault();
@@ -240,6 +241,11 @@ export default function App() {
       {error && (
         <div role="alert" className="p-4 bg-red-100 text-red-900">
           {error} <button onClick={() => setError("")}>Cerrar</button>
+        </div>
+      )}
+      {readyOrders.length > 0 && (
+        <div role="status" className="sticky top-0 z-40 bg-amber-100 border-y-2 border-amber-400 p-4 font-bold text-amber-950 text-center">
+          ¡Listo para recoger en cocina! {readyOrders.slice(0,5).map(o=>`#${o.orderNumber} ${o.tableName|| (o.orderType===OrderType.WINDOW?"Ventana":"Exprés")}`).join(" · ")}
         </div>
       )}
       {toast && (
