@@ -110,9 +110,8 @@ test(
       });
       const adm = await page();
       await login(adm, "/admin", "admin");
-      await expect(
-        adm.getByAltText("QR Mesa 3", { exact: true }),
-      ).toBeVisible();
+      await adm.getByRole("button", { name: "Mesas y Códigos QR" }).click();
+      await expect(adm.getByAltText("QR Mesa 3", { exact: true })).toBeVisible();
       const token = await adm.evaluate(async () => {
         const s = await fetch("/api/state").then((r) => r.json());
         return s.tables.find((t: any) => t.number === 3).qrToken;
@@ -169,12 +168,11 @@ test(
       await expect(
         rec.getByRole("button", { name: "Marcar Entregado", exact: true }),
       ).toBeVisible();
-      await rec
-        .getByRole("button", { name: "Cobrar en Caja", exact: true })
-        .click();
-      await rec
-        .getByRole("button", { name: "Registrar Pago (₡3.300)", exact: true })
-        .click();
+      await adm.getByRole("button", { name: "Caja / Mesas" }).click();
+      await adm.getByRole("button", { name: /Ver cuenta y cobrar/ }).click();
+      await adm.getByLabel("¿Con cuánto está pagando?").fill("5000");
+      await expect(adm.getByText("Vuelto a entregar: ₡1.700")).toBeVisible();
+      await adm.getByRole("button", { name: /Registrar pago de ₡3.300/ }).click();
       await rec
         .getByRole("button", { name: "Marcar Entregado", exact: true })
         .click();
