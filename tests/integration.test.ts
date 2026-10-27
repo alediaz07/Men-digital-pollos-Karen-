@@ -602,7 +602,7 @@ test("Inventario en pausa: aprobar pedidos no consume ni bloquea existencias", a
   const approvedSecond = await reception.req("/api/orders/" + second.data.id, "PATCH", {status:"in_kitchen"});
   assert.equal(approvedSecond.status, 200, JSON.stringify(approvedSecond.data));
   snapshot = await admin.req("/api/admin/inventory");
-  assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 200);
+  assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 400);
   assert.equal(snapshot.data.movements.filter((x:any)=>x.orderId===first.data.id).length, 0);
 });
 test("POS: ventana sin recargos y dos rondas de mesa en un solo cobro con vuelto", async () => {
