@@ -574,6 +574,34 @@ test("Comprobantes privados, acceso público explícito y WebSocket rechaza otro
     ws.on("error", () => {});
   });
 });
+test("Inventario: recetas, descuento único al aprobar y bloqueo por falta de insumos", async () => {
+  const created = await admin.req("/api/admin/inventory/ingredient", "POST", {
+    name: "Pollo de prueba", unit: "g", quantity: 400, minimum: 50,
+  });
+  assert.equal(created.status, 200, JSON.stringify(created.data));
+  const ingredientId = created.data.ingredient.id;
+  const recipe = await admin.req("/api/admin/inventory/recipe/cas-pollo-frito", "PUT", {
+    parts: [{ ingredientId, quantity: 200 }],
+  });
+  assert.equal(recipe.status, 200, JSON.stringify(recipe.data));
+  const first = await bob.req("/api/orders", "POST", {items:[item], tableToken}, {
+    "Idempotency-Key": "inventory-test-0000000001",
+  });
+  assert.equal(first.status, 201, JSON.stringify(first.data));
+  const approve = await reception.req("/api/orders/" + first.data.id, "PATCH", {status:"in_kitchen"});
+  assert.equal(approve.status, 200, JSON.stringify(approve.data));
+  let snapshot = await admin.req("/api/admin/inventory");
+  assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 200);
+  const second = await bob.req("/api/orders", "POST", {items:[{...item,quantity:2}],tableToken}, {
+    "Idempotency-Key": "inventory-test-0000000002",
+  });
+  assert.equal(second.status, 201);
+  const rejected = await reception.req("/api/orders/" + second.data.id, "PATCH", {status:"in_kitchen"});
+  assert.equal(rejected.status, 409);
+  snapshot = await admin.req("/api/admin/inventory");
+  assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 200);
+  assert.equal(snapshot.data.movements.filter((x:any)=>x.orderId===first.data.id).length, 1);
+});
 test("Limitación de login y cierre de sesión", async () => {
   const c = await new Client().init();
   let r;
