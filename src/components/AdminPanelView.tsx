@@ -3,7 +3,9 @@ import QRCode from 'qrcode';
 import { api } from '../utils/api';
 import { sales, dateRange, costaRicaDate } from '../utils/sales';
 import { StaffAccounts } from './StaffAccounts';
-import { InventoryPanelView } from './InventoryPanelView';
+import { AdminPOSView } from './AdminPOSView';
+import { AdminCashierView } from './AdminCashierView';
+import { ReceptionView } from './ReceptionView';
 import {
   QrCode,
   Printer,
@@ -44,6 +46,9 @@ interface AdminPanelViewProps {
   onSaveSettings: (settings: Partial<RestaurantSettings>) => Promise<void>;
   onSimulateScanTable: (tableId: string) => void;
   onSimulateExpress: () => void;
+  onUpdateOrder: (id:string, updates:Partial<Order>)=>Promise<void>;
+  onCreatePOS: (payload:any)=>Promise<Order>;
+  onCheckout: (payload:any)=>Promise<any>;
 }
 
 export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
@@ -57,8 +62,11 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   onSaveSettings,
   onSimulateScanTable,
   onSimulateExpress,
+  onUpdateOrder,
+  onCreatePOS,
+  onCheckout,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'qr' | 'menu' | 'sales' | 'inventory'>('qr');
+  const [activeSubTab, setActiveSubTab] = useState<'pos' | 'pedidos' | 'caja' | 'qr' | 'menu' | 'sales' | 'expres'>('pos');
 
   // QR Code Data URLs map
   const [qrDataUrls, setQrDataUrls] = useState<Record<string, string>>({});
@@ -90,7 +98,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     async function generateAllQrs() {
       const map: Record<string, string> = {};
       for (const table of tables) {
-        const targetUrl = `${baseUrl}/?qr=${encodeURIComponent(table.qrToken || "")}`;
+        const targetUrl = `${baseUrl}/mesa?qr=${encodeURIComponent(table.qrToken || "")}`;
         try {
           map[table.id] = await QRCode.toDataURL(targetUrl, {
             width: 320,
@@ -105,7 +113,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
         }
       }
       try {
-        const expUrl = await QRCode.toDataURL(`${baseUrl}/?modo=expres`, {
+        const expUrl = await QRCode.toDataURL(`${baseUrl}/expres`, {
           width: 320,
           margin: 2,
           color: {
@@ -256,14 +264,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             <TrendingUp className="w-4 h-4" />
             Ventas y Tarifas
           </button>
-          <button type="button" onClick={() => setActiveSubTab('inventory')}
-            className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold ${activeSubTab === 'inventory' ? 'bg-[#C81E1E] text-white' : 'text-stone-700 hover:text-stone-900'}`}>
-            Inventario y recetas
-          </button>
+          <button type="button" onClick={() => setActiveSubTab('pos')} className={`px-4 py-2 rounded-lg font-bold text-sm ${activeSubTab==='pos'?'bg-[#C81E1E] text-white':'text-stone-700'}`}>Punto de venta</button>
+          <button type="button" onClick={() => setActiveSubTab('pedidos')} className={`px-4 py-2 rounded-lg font-bold text-sm ${activeSubTab==='pedidos'?'bg-[#C81E1E] text-white':'text-stone-700'}`}>Autorizar y cocina</button>
+          <button type="button" onClick={() => setActiveSubTab('caja')} className={`px-4 py-2 rounded-lg font-bold text-sm ${activeSubTab==='caja'?'bg-[#C81E1E] text-white':'text-stone-700'}`}>Caja / Mesas</button>
+          <button type="button" onClick={() => setActiveSubTab('expres')} className={`px-4 py-2 rounded-lg font-bold text-sm ${activeSubTab==='expres'?'bg-[#C81E1E] text-white':'text-stone-700'}`}>Horario exprés</button>
         </div>
       </div>
 
-      {activeSubTab === 'inventory' && <InventoryPanelView menu={menu} />}
+      {activeSubTab === 'pos' && <AdminPOSView menu={menu} tables={tables} onCreate={onCreatePOS} />}
+      {activeSubTab === 'pedidos' && <ReceptionView orders={orders} settings={settings} onUpdateOrder={onUpdateOrder}/>}
+      {activeSubTab === 'caja' && <AdminCashierView orders={orders} onCheckout={onCheckout}/>}
+      {activeSubTab === 'expres' && <ExpressScheduleSettings settings={settings} onSaveSettings={onSaveSettings}/>}
+      {/* Inventario en pausa por decisión del negocio. No se muestra ni descuenta stock. */}
       {/* SUB-VIEW 1: QR CODES & TABLES */}
       {activeSubTab === 'qr' && (
         <div className="space-y-6">
@@ -312,7 +324,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {tables.map((table) => {
               const qrImg = qrDataUrls[table.id];
-              const tableUrl = `${baseUrl}/?qr=${encodeURIComponent(table.qrToken || "")}`;
+              const tableUrl = `${baseUrl}/mesa?qr=${encodeURIComponent(table.qrToken || "")}`;
 
               return (
                 <div
@@ -850,3 +862,18 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
     </div>
   );
 };
+
+function ExpressScheduleSettings({settings,onSaveSettings}:{settings:RestaurantSettings;onSaveSettings:(changes:Partial<RestaurantSettings>)=>Promise<void>}) {
+  const [open,setOpen]=React.useState(settings.expressOpen||"07:00");
+  const [close,setClose]=React.useState(settings.expressClose||"16:00");
+  const [days,setDays]=React.useState<number[]>(settings.expressDays||[1,2,3,4,5]);
+  const [temporarilyClosed,setTemporarilyClosed]=React.useState(!!settings.expressTemporarilyClosed);
+  const [message,setMessage]=React.useState("");
+  return <form className="bg-white border rounded-2xl p-6 space-y-4 max-w-xl" onSubmit={async e=>{e.preventDefault();try{await onSaveSettings({expressOpen:open,expressClose:close,expressDays:days,expressTemporarilyClosed:temporarilyClosed});setMessage("Horario exprés guardado.");}catch(e){setMessage(e instanceof Error?e.message:"No se guardaron los cambios.");}}}>
+    <h2 className="font-bold text-xl">Horario del servicio exprés</h2><p className="text-sm">Predeterminado: lunes a viernes, 7:00 a.m. a 4:00 p.m., zona horaria Costa Rica. Fuera de horario no se reciben pedidos nuevos, pero sí continúan los anteriores.</p>
+    <div className="flex gap-3"><label>Apertura<input className="block border rounded-lg p-2" type="time" value={open} onChange={e=>setOpen(e.target.value)} required/></label><label>Cierre<input className="block border rounded-lg p-2" type="time" value={close} onChange={e=>setClose(e.target.value)} required/></label></div>
+    <fieldset><legend className="font-semibold">Días habilitados</legend><div className="flex flex-wrap gap-3 mt-2">{["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"].map((name,day)=><label key={day} className="flex gap-1 items-center text-sm"><input type="checkbox" checked={days.includes(day)} onChange={e=>setDays(old=>e.target.checked?[...old,day].sort():old.filter(d=>d!==day))}/>{name}</label>)}</div></fieldset>
+    <label className="flex items-center gap-3 font-semibold"><input type="checkbox" checked={temporarilyClosed} onChange={e=>setTemporarilyClosed(e.target.checked)}/>Cerrar exprés temporalmente (feriados, emergencias)</label>
+    <button className="bg-red-700 text-white font-bold rounded-lg px-5 py-3">Guardar horario</button>{message&&<p role="status">{message}</p>}
+  </form>;
+}
