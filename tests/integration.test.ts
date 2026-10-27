@@ -112,6 +112,7 @@ const express = {
   customerPhone: "8888-8888",
   deliveryAddress: "Dirección de prueba",
   paymentMethod: "efectivo",
+  cashChangeFor: 5000,
 };
 let tableToken: string, tableOrder: Order, expressOrder: Order;
 const sockets: WebSocket[] = [];
