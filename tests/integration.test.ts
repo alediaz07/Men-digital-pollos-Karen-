@@ -278,6 +278,7 @@ test("E: cobro idempotente, SINPE exige verificación y no confunde captura con 
     isPaid: true,
     paymentMethod: "sinpe",
     sinpeVerified: true,
+    sinpeReference: "BANK-TEST-001",
   });
   assert.equal(paid.status, 200);
   assert.ok(paid.data.paidAt);
