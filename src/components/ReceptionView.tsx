@@ -133,6 +133,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
     e.preventDefault();
     if (!cashierOrder) return;
     if (selectedCajaMethod === PaymentMethod.EFECTIVO && cajaCashReceived && Number(cajaCashReceived) < cashierOrder.total) throw new Error('El efectivo recibido es menor al total.');
+    if (selectedCajaMethod === PaymentMethod.SINPE && (cajaSinpeRef.trim() || cashierOrder.sinpeReference || "").trim().length < 4) { window.alert("Introduce una referencia bancaria de al menos 4 caracteres."); return; }
     if (selectedCajaMethod === PaymentMethod.SINPE && !window.confirm('¿Verificaste el abono en la cuenta bancaria? La captura por sí sola no confirma el pago.')) return;
     await onUpdateOrder(cashierOrder.id, {
       paymentMethod: selectedCajaMethod,
@@ -509,7 +510,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                       <button
                         type="button"
                         onClick={() =>
-                          window.confirm("¿Cancelar este pedido?") && onUpdateOrder(order.id, { status: OrderStatus.CANCELLED })
+                          (() => { const reason = window.prompt("Motivo de cancelación (mínimo 5 caracteres):"); if (reason && reason.trim().length >= 5) void onUpdateOrder(order.id, { status: OrderStatus.CANCELLED, cancellationReason: reason.trim() }); })()
                         }
                         title="Cancelar pedido"
                         className="p-2.5 rounded-xl border border-stone-200 text-stone-500 hover:text-red-600 hover:bg-red-50"
@@ -602,8 +603,9 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                   <button
                     type="button"
                     onClick={async () => {
-                      if (!window.confirm('¿Confirmas que el abono SINPE está verificado en la cuenta bancaria?')) return;
-                      await onUpdateOrder(previewReceiptOrder.id, { isPaid: true, sinpeVerified: true });
+                      const reference = window.prompt('Referencia bancaria del abono verificado:', previewReceiptOrder.sinpeReference || '');
+                      if (!reference || reference.trim().length < 4 || !window.confirm('¿Confirmas que el abono SINPE está verificado en la cuenta bancaria?')) return;
+                      await onUpdateOrder(previewReceiptOrder.id, { isPaid: true, sinpeVerified: true, sinpeReference: reference.trim() });
                       setPreviewReceiptOrder(null);
                     }}
                     className="px-4 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold cursor-pointer"
@@ -615,8 +617,10 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                   <button
                     type="button"
                     onClick={async () => {
-                      if (!window.confirm('¿Verificaste el abono SINPE y la cobertura de la dirección de entrega?')) return;
+                      const reference = window.prompt('Referencia bancaria del abono verificado:', previewReceiptOrder.sinpeReference || '');
+                      if (!reference || reference.trim().length < 4 || !window.confirm('¿Verificaste el abono SINPE y la cobertura de la dirección de entrega?')) return;
                       await onUpdateOrder(previewReceiptOrder.id, {
+                        sinpeReference: reference.trim(),
                         coverageStatus: previewReceiptOrder.orderType === OrderType.EXPRESS ? 'verified' : undefined,
                         sinpeVerified: true,
                         isPaid: true,
@@ -767,7 +771,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                   type="text"
                   value={cajaSinpeRef}
                   onChange={(e) => setCajaSinpeRef(e.target.value)}
-                  placeholder="Últimos dígitos o nombre (opcional)"
+                  placeholder="Referencia bancaria verificada (obligatoria)"
                   className="w-full px-3.5 py-2 border border-stone-200 rounded-xl text-sm"
                 />
               </div>

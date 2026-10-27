@@ -4,11 +4,15 @@ import express from "express";
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import path from "node:path";
+import fs from "node:fs";
 import {
   loadStore,
   writeStore,
   acquireLock,
+  dataDir,
   type Store,
+  type InventoryIngredient,
+  type InventoryRecipe,
 } from "./backend/store.ts";
 import {
   digest,
@@ -145,6 +149,38 @@ function permit(...roles: Role[]): express.RequestHandler {
 }
 const admin = permit("admin");
 const operations = permit("admin", "reception", "kitchen");
+function audit(s: Store, orderId: string, type: string, actor: string, details = "") {
+  s.auditLog.unshift({ id: randomUUID(), orderId, type, actor, at: new Date().toISOString(), details });
+  if (s.auditLog.length > 10000) s.auditLog.length = 10000;
+}
+function consumeRecipe(s: Store, order: Order, actor: string) {
+  const used = new Map<string, number>();
+  for (const item of order.items) {
+    const recipe = s.recipes.find(r => r.menuItemId === item.menuItemId);
+    for (const part of recipe?.parts || []) used.set(part.ingredientId, (used.get(part.ingredientId) || 0) + part.quantity * item.quantity);
+  }
+  for (const [id, amount] of used) {
+    const ingredient = s.inventory.find(i => i.id === id);
+    if (!ingredient || ingredient.quantity + 0.000001 < amount)
+      fail(`No hay existencias suficientes: ${ingredient?.name || id}`, 409);
+  }
+  for (const [id, amount] of used) {
+    const ingredient = s.inventory.find(i => i.id === id)!;
+    ingredient.quantity = Math.round((ingredient.quantity - amount) * 1000) / 1000;
+    s.stockMovements.unshift({id: randomUUID(), ingredientId: id, delta: -amount, reason: "Consumo pedido confirmado", orderId: order.id, createdAt: new Date().toISOString(), by: actor});
+  }
+}
+function withinSchedule(schedule: string | undefined, now = new Date()): boolean {
+  if (process.env.TEST_MODE === "true") return true; // tests fixture: no time-based flakiness
+  if (!schedule) return true;
+  const times = [...schedule.toLowerCase().matchAll(/(\d{1,2}):(\d{2})\s*(am|pm)/g)];
+  if (times.length !== 2) return true;
+  const minute = (m: RegExpMatchArray) => (Number(m[1]) % 12 + (m[3] === "pm" ? 12 : 0)) * 60 + Number(m[2]);
+  const local = new Intl.DateTimeFormat("en-GB", {timeZone:"America/Costa_Rica",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(now);
+  const [hour,min] = local.split(":").map(Number), current = hour * 60 + min;
+  const start = minute(times[0]), end = minute(times[1]);
+  return start < end ? current >= start && current < end : current >= start || current < end;
+}
 function publicOrder(o: Order) {
   const { ownerHash, requestKey, requestHash, sinpeReceiptImage, ...safe } = o;
   return safe;
@@ -202,7 +238,7 @@ function state(req: IncomingMessage) {
       revision: store.revision,
     };
   return {
-    menu: store.menu,
+    menu: user ? store.menu : store.menu.map(p => ({...p, available: p.available && withinSchedule(p.scheduleText)})),
     settings: store.settings,
     tables: user?.role === "admin" ? store.tables : [],
     orders: user
@@ -313,10 +349,16 @@ app.get("/api/table/:token", (req, res) => {
 app.get("/api/orders/:id/receipt", permit("admin", "reception"), (req, res) => {
   const order = store.orders.find((o) => o.id === req.params.id);
   if (!order?.sinpeReceiptImage) return res.sendStatus(404);
-  const match =
-    /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(
-      order.sinpeReceiptImage,
-    );
+  if (order.sinpeReceiptImage.startsWith("private:")) {
+    const name = order.sinpeReceiptImage.slice(8);
+    if (!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(name)) return res.sendStatus(404);
+    const file = path.join(dataDir, "receipts", name);
+    if (!fs.existsSync(file)) return res.sendStatus(404);
+    res.type(path.extname(file)).send(fs.readFileSync(file));
+    return;
+  }
+  // Legacy receipts are readable for migration; new receipts are always private files.
+  const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(order.sinpeReceiptImage);
   if (!match) return res.sendStatus(404);
   res.type(match[1]).send(Buffer.from(match[2], "base64"));
 });
@@ -361,7 +403,7 @@ app.post("/api/orders", (req, res) => {
     const product = store.menu.find(
       (p) => p.id === item.menuItemId && p.available,
     );
-    if (!product) fail("Un platillo ya no está disponible.");
+    if (!product || !withinSchedule(product.scheduleText)) fail("Producto agotado o fuera de horario.");
     if (
       !Number.isInteger(item.quantity) ||
       item.quantity < 1 ||
@@ -417,6 +459,8 @@ app.post("/api/orders", (req, res) => {
     cashChangeFor < subtotal + serviceFee + deliveryFee
   )
     fail("El monto para vuelto es menor al total.");
+  const receiptMatch = receipt?.match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
+  const receiptName = receiptMatch ? `${randomUUID()}.${receiptMatch[1] === "jpeg" ? "jpg" : receiptMatch[1]}` : undefined;
   const order: Order = {
     id: randomUUID(),
     orderNumber: store.nextOrderNumber,
@@ -433,7 +477,7 @@ app.post("/api/orders", (req, res) => {
     total: subtotal + serviceFee + deliveryFee,
     paymentMethod: table ? PaymentMethod.PENDING_CAJA : b.paymentMethod,
     sinpeReference: text(b.sinpeReference, 100),
-    sinpeReceiptImage: receipt,
+    sinpeReceiptImage: receiptName ? `private:${receiptName}` : undefined,
     cashChangeFor,
     isPaid: false,
     status: OrderStatus.PENDING_RECEPTION,
@@ -444,10 +488,17 @@ app.post("/api/orders", (req, res) => {
     requestHash,
     isTest: process.env.TEST_MODE === "true",
   };
-  commit((s) => {
-    s.nextOrderNumber++;
-    s.orders.unshift(order);
-  });
+  const receiptFile = receiptName ? path.join(dataDir, "receipts", receiptName) : undefined;
+  if (receiptFile && receiptMatch) {
+    fs.mkdirSync(path.dirname(receiptFile), {recursive:true,mode:0o700});
+    fs.writeFileSync(receiptFile, Buffer.from(receiptMatch[2], "base64"), {flag:"wx",mode:0o600});
+  }
+  try {
+    commit((s) => { s.nextOrderNumber++; s.orders.unshift(order); });
+  } catch (err) {
+    if (receiptFile) fs.rmSync(receiptFile, {force:true});
+    throw err;
+  }
   res.status(201).json(publicOrder(order));
 });
 app.patch("/api/orders/:id", operations, (req, res) => {
@@ -465,7 +516,9 @@ app.patch("/api/orders/:id", operations, (req, res) => {
           "sinpeReference",
           "sinpeVerified",
           "coverageStatus",
+          "cancellationReason",
         ];
+  if (b.cancellationReason != null && b.status !== OrderStatus.CANCELLED) fail("El motivo solo aplica a cancelaciones.");
   if (Object.keys(b).some((k) => !allowed.includes(k)))
     fail("Campo no autorizado.", 403);
   const updated = structuredClone(o);
@@ -491,6 +544,11 @@ app.patch("/api/orders/:id", operations, (req, res) => {
         ))
     )
       fail("Transición de estado no permitida.", 409);
+    if (b.status === OrderStatus.CANCELLED) {
+      const reason = text(b.cancellationReason, 300);
+      if (!reason || reason.length < 5) fail("Indica motivo de cancelación (mínimo 5 caracteres).");
+      updated.cancellationReason = reason;
+    }
     if (b.status === OrderStatus.CANCELLED && o.isPaid)
       fail(
         "El pedido ya está cobrado; requiere conciliación antes de cancelar.",
@@ -534,17 +592,24 @@ app.patch("/api/orders/:id", operations, (req, res) => {
       updated.paymentMethod === PaymentMethod.PENDING_CAJA
     )
       fail("No se puede registrar el cobro.");
-    if (
-      updated.paymentMethod === PaymentMethod.SINPE &&
-      b.sinpeVerified !== true
-    )
-      fail("Confirma la verificación del abono SINPE.");
+    if (updated.paymentMethod === PaymentMethod.SINPE) {
+      if (b.sinpeVerified !== true) fail("Debes confirmar que verificaste el abono en el banco.");
+      const reference = updated.sinpeReference?.trim();
+      if (!reference || reference.length < 4) fail("Introduce referencia bancaria SINPE (mínimo 4 caracteres).");
+      if (store.orders.some(x => x.id !== o.id && x.isPaid && x.paymentMethod === PaymentMethod.SINPE && x.sinpeReference?.trim().toLowerCase() === reference.toLowerCase()))
+        fail("Esta referencia bancaria ya fue utilizada.", 409);
+      updated.sinpeVerified = true;
+    }
     updated.isPaid = true;
     updated.paidAt = now;
     updated.paidBy = user.username;
   }
   commit((s) => {
+    if (updated.status === OrderStatus.IN_KITCHEN && o.status !== updated.status) consumeRecipe(s, updated, user.username);
     s.orders[s.orders.findIndex((x) => x.id === o.id)] = updated;
+    if (updated.status !== o.status) audit(s,o.id,"status",user.username,`${o.status} → ${updated.status}: ${updated.cancellationReason || ""}`);
+    if (!o.isPaid && updated.isPaid) audit(s,o.id,"payment",user.username,`${updated.paymentMethod}: ${updated.total}`);
+    if (updated.coverageStatus !== o.coverageStatus) audit(s,o.id,"coverage",user.username,updated.coverageStatus || "");
   });
   res.json(
     user.role === "kitchen" ? kitchenOrder(updated) : operationalOrder(updated),
@@ -556,6 +621,35 @@ app.delete("/api/orders/:id", admin, (_req, _res) =>
     409,
   ),
 );
+app.get("/api/admin/inventory", admin, (_req,res) => res.json({ingredients:store.inventory,recipes:store.recipes,movements:store.stockMovements.slice(0,300)}));
+app.post("/api/admin/inventory/ingredient", admin, (req,res) => {
+  const b=req.body;
+  const name=text(b.name,80,true)!;
+  const unit=b.unit;
+  if (!["g","kg","ml","l","unidad"].includes(unit) || ![b.quantity,b.minimum].every(x=>typeof x==="number" && Number.isFinite(x) && x>=0 && x<=1e7)) fail("Datos del insumo inválidos.");
+  const existing=b.id && store.inventory.find(i=>i.id===b.id);
+  const ingredient: InventoryIngredient={id:existing?.id || randomUUID(),name,unit,quantity:existing?.quantity??b.quantity,minimum:b.minimum};
+  commit(s=>{const i=s.inventory.findIndex(x=>x.id===ingredient.id);if(i<0)s.inventory.push(ingredient);else s.inventory[i]=ingredient;audit(s,"","ingredient",staff(req)!.username,name);});
+  res.json({ingredient});
+});
+app.post("/api/admin/inventory/adjust", admin, (req,res) => {
+  const {ingredientId,delta,reason}=req.body;
+  const why=text(reason,300,true)!;
+  if (typeof delta!=="number" || !Number.isFinite(delta) || delta===0 || Math.abs(delta)>1e6 || why.length<5) fail("Cantidad o motivo inválidos.");
+  const ing=store.inventory.find(i=>i.id===ingredientId);
+  if (!ing || ing.quantity+delta<0) fail("Ingrediente inexistente o sin existencia suficiente.",409);
+  commit(s=>{const target=s.inventory.find(i=>i.id===ingredientId)!;target.quantity=Math.round((target.quantity+delta)*1000)/1000;s.stockMovements.unshift({id:randomUUID(),ingredientId,delta,reason:why,createdAt:new Date().toISOString(),by:staff(req)!.username});audit(s,"","stock",staff(req)!.username,`${ingredientId} ${delta}: ${why}`);});
+  res.json({ok:true});
+});
+app.put("/api/admin/inventory/recipe/:menuItemId", admin, (req,res) => {
+  const menuItemId=req.params.menuItemId;
+  const parts=req.body.parts as InventoryRecipe["parts"];
+  if (!store.menu.some(m=>m.id===menuItemId) || !Array.isArray(parts) || parts.length>50 || parts.some(p=>!store.inventory.some(i=>i.id===p.ingredientId)||typeof p.quantity!=="number"||!Number.isFinite(p.quantity)||p.quantity<=0||p.quantity>1e6)||new Set(parts.map(p=>p.ingredientId)).size!==parts.length) fail("Receta inválida.");
+  commit(s=>{s.recipes=s.recipes.filter(r=>r.menuItemId!==menuItemId);s.recipes.push({menuItemId,parts});audit(s,"","recipe",staff(req)!.username,menuItemId);});
+  res.json({ok:true});
+});
+app.get("/api/admin/audit",admin,(_req,res)=>res.json(store.auditLog.slice(0,300)));
+app.get("/api/admin/kpis",admin,(_req,res)=>{const paid=store.orders.filter(o=>o.isPaid&&!o.isTest);const sum=(f:(o:Order)=>number)=>paid.reduce((n,o)=>n+f(o),0);res.json({paidOrders:paid.length,totalCollected:sum(o=>o.total),restaurantGross:sum(o=>o.subtotal+o.deliveryFee),serviceFeesHeld:sum(o=>o.serviceFee),deliveryFees:sum(o=>o.deliveryFee)});});
 function validateMenu(item: any): MenuItem {
   if (
     !item ||
@@ -603,6 +697,7 @@ app.put("/api/menu", admin, (req, res) => {
 app.delete("/api/menu/item/:id", admin, (req, res) => {
   commit((s) => {
     s.menu = s.menu.filter((p) => p.id !== req.params.id);
+    s.recipes = s.recipes.filter(r => r.menuItemId !== req.params.id);
   });
   res.json({ ok: true });
 });

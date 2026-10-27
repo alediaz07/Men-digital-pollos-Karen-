@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { api } from '../utils/api';
 import { sales, dateRange, costaRicaDate } from '../utils/sales';
 import { StaffAccounts } from './StaffAccounts';
+import { InventoryPanelView } from './InventoryPanelView';
 import {
   QrCode,
   Printer,
@@ -57,7 +58,7 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
   onSimulateScanTable,
   onSimulateExpress,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'qr' | 'menu' | 'sales'>('qr');
+  const [activeSubTab, setActiveSubTab] = useState<'qr' | 'menu' | 'sales' | 'inventory'>('qr');
 
   // QR Code Data URLs map
   const [qrDataUrls, setQrDataUrls] = useState<Record<string, string>>({});
@@ -255,9 +256,14 @@ export const AdminPanelView: React.FC<AdminPanelViewProps> = ({
             <TrendingUp className="w-4 h-4" />
             Ventas y Tarifas
           </button>
+          <button type="button" onClick={() => setActiveSubTab('inventory')}
+            className={`px-4 py-2 rounded-lg text-xs sm:text-sm font-bold ${activeSubTab === 'inventory' ? 'bg-[#C81E1E] text-white' : 'text-stone-700 hover:text-stone-900'}`}>
+            Inventario y recetas
+          </button>
         </div>
       </div>
 
+      {activeSubTab === 'inventory' && <InventoryPanelView menu={menu} />}
       {/* SUB-VIEW 1: QR CODES & TABLES */}
       {activeSubTab === 'qr' && (
         <div className="space-y-6">
