@@ -14,7 +14,9 @@ export interface RecipePart { ingredientId: string; quantity: number; }
 export interface InventoryRecipe { menuItemId: string; parts: RecipePart[]; }
 export interface InventoryMovement { id: string; ingredientId: string; delta: number; reason: string; orderId?: string; createdAt: string; by: string; }
 export interface AuditEvent { id: string; orderId: string; type: string; actor: string; at: string; details: string; }
+export interface CashTransaction { id: string; orderIds: string[]; total: number; method: "efectivo" | "sinpe" | "tarjeta"; cashReceived?: number; changeGiven?: number; sinpeReference?: string; createdAt: string; actor: string; }
 export interface Store extends AppStatePayload {
+  cashTransactions: CashTransaction[];
   inventory: InventoryIngredient[];
   recipes: InventoryRecipe[];
   stockMovements: InventoryMovement[];
@@ -62,6 +64,11 @@ export function loadStore(): Store {
   if (existing)
     fs.copyFileSync(dataFile, `${dataFile}.pre-migration-${Date.now()}.bak`);
   store.settings.serviceChargePercent = 10;
+  store.cashTransactions ||= [];
+  store.settings.expressOpen ||= "07:00";
+  store.settings.expressClose ||= "16:00";
+  store.settings.expressDays ||= [1,2,3,4,5];
+  store.settings.expressTemporarilyClosed ||= false;
   store.inventory ||= [];
   store.recipes ||= [];
   store.stockMovements ||= [];
