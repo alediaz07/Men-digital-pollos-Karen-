@@ -587,7 +587,7 @@ test("Inventario en pausa: aprobar pedidos no consume ni bloquea existencias", a
     parts: [{ ingredientId, quantity: 200 }],
   });
   assert.equal(recipe.status, 200, JSON.stringify(recipe.data));
-  const first = await bob.req("/api/orders", "POST", {items:[item], tableToken: liveTableToken}, {
+  const first = await bob.req("/api/orders", "POST", {items:[item], orderType:"dine_in", tableToken: liveTableToken}, {
     "Idempotency-Key": "inventory-test-0000000001",
   });
   assert.equal(first.status, 201, JSON.stringify(first.data));
@@ -595,7 +595,7 @@ test("Inventario en pausa: aprobar pedidos no consume ni bloquea existencias", a
   assert.equal(approve.status, 200, JSON.stringify(approve.data));
   let snapshot = await admin.req("/api/admin/inventory");
   assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 400);
-  const second = await bob.req("/api/orders", "POST", {items:[{...item,quantity:2}],tableToken: liveTableToken}, {
+  const second = await bob.req("/api/orders", "POST", {items:[{...item,quantity:2}],orderType:"dine_in",tableToken: liveTableToken}, {
     "Idempotency-Key": "inventory-test-0000000002",
   });
   assert.equal(second.status, 201);
