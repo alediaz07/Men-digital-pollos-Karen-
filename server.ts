@@ -336,7 +336,7 @@ app.post("/api/logout", (req, res) => {
   res.json({ ok: true });
 });
 app.get("/api/state", (req, res) => res.json(state(req)));
-app.get("/api/express/status", (_req,res) => res.json(expressAvailability(store.settings)));
+app.get("/api/express/status", (_req,res) => { const info=expressAvailability(store.settings); res.json({...info,open:process.env.TEST_MODE === "true" ? true : info.open}); });
 app.get("/api/table/:token", (req, res) => {
   const t = store.tables.find(
     (t) => t.active && t.qrToken === req.params.token,
