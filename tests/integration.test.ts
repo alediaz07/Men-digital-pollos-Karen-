@@ -575,7 +575,7 @@ test("Comprobantes privados, acceso público explícito y WebSocket rechaza otro
     ws.on("error", () => {});
   });
 });
-test("Inventario: recetas, descuento único al aprobar y bloqueo por falta de insumos", async () => {
+test("Inventario en pausa: aprobar pedidos no consume ni bloquea existencias", async () => {
   await reception.init("reception");
   const liveTableToken = (await admin.req("/api/state")).data.tables.find((t:any)=>t.number===3).qrToken;
   const created = await admin.req("/api/admin/inventory/ingredient", "POST", {
@@ -594,16 +594,48 @@ test("Inventario: recetas, descuento único al aprobar y bloqueo por falta de in
   const approve = await reception.req("/api/orders/" + first.data.id, "PATCH", {status:"in_kitchen"});
   assert.equal(approve.status, 200, JSON.stringify(approve.data));
   let snapshot = await admin.req("/api/admin/inventory");
-  assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 200);
+  assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 400);
   const second = await bob.req("/api/orders", "POST", {items:[{...item,quantity:2}],tableToken: liveTableToken}, {
     "Idempotency-Key": "inventory-test-0000000002",
   });
   assert.equal(second.status, 201);
-  const rejected = await reception.req("/api/orders/" + second.data.id, "PATCH", {status:"in_kitchen"});
-  assert.equal(rejected.status, 409);
+  const approvedSecond = await reception.req("/api/orders/" + second.data.id, "PATCH", {status:"in_kitchen"});
+  assert.equal(approvedSecond.status, 200);
   snapshot = await admin.req("/api/admin/inventory");
   assert.equal(snapshot.data.ingredients.find((x:any)=>x.id===ingredientId).quantity, 200);
-  assert.equal(snapshot.data.movements.filter((x:any)=>x.orderId===first.data.id).length, 1);
+  assert.equal(snapshot.data.movements.filter((x:any)=>x.orderId===first.data.id).length, 0);
+});
+test("POS: ventana sin recargos y dos rondas de mesa en un solo cobro con vuelto", async () => {
+  const rejects = await alice.req("/api/admin/pos/orders","POST",{orderType:"window",items:[item],authorize:true});
+  assert.equal(rejects.status,401);
+  const windowTicket = await admin.req("/api/admin/pos/orders","POST",{orderType:"window",items:[item],authorize:true});
+  assert.equal(windowTicket.status,201,JSON.stringify(windowTicket.data));
+  assert.equal(windowTicket.data.deliveryFee,0);
+  assert.equal(windowTicket.data.serviceFee,0);
+  assert.equal(windowTicket.data.isPaid,false);
+  assert.equal(windowTicket.data.status,"in_kitchen");
+  const m1=await admin.req("/api/admin/pos/orders","POST",{orderType:"dine_in",tableId:"mesa-1",items:[item],authorize:true});
+  const m2=await admin.req("/api/admin/pos/orders","POST",{orderType:"dine_in",tableId:"mesa-1",items:[{...item,quantity:2}],authorize:true});
+  assert.equal(m1.status,201,JSON.stringify(m1.data));
+  assert.equal(m2.status,201,JSON.stringify(m2.data));
+  assert.equal(m1.data.serviceFee,300);
+  assert.equal(m2.data.serviceFee,600);
+  const denied=await admin.req("/api/admin/checkout","POST",{orderIds:[m1.data.id],paymentMethod:"efectivo",cashReceived:10000});
+  assert.equal(denied.status,409);
+  const total=m1.data.total+m2.data.total;
+  const close=await admin.req("/api/admin/checkout","POST",{orderIds:[m1.data.id,m2.data.id],paymentMethod:"efectivo",cashReceived:10000});
+  assert.equal(close.status,200,JSON.stringify(close.data));
+  assert.equal(close.data.total,total);
+  assert.equal(close.data.changeGiven,10000-total);
+  const double=await admin.req("/api/admin/checkout","POST",{orderIds:[m1.data.id,m2.data.id],paymentMethod:"efectivo",cashReceived:10000});
+  assert.equal(double.status,409);
+  const after=await admin.req("/api/state");
+  assert.equal(after.data.orders.find((o:any)=>o.id===m1.data.id).isPaid,true);
+  assert.equal(after.data.orders.find((o:any)=>o.id===m2.data.id).isPaid,true);
+  const windowPaid=await admin.req("/api/admin/checkout","POST",{orderIds:[windowTicket.data.id],paymentMethod:"efectivo",cashReceived:5000});
+  assert.equal(windowPaid.status,200);
+  const deniedPublic=await bob.req("/api/orders","POST",{...express,orderType:"window"},{ "Idempotency-Key":"private-pos-misuse-00000001" });
+  assert.equal(deniedPublic.status,400);
 });
 test("Limitación de login y cierre de sesión", async () => {
   const c = await new Client().init();
