@@ -9,6 +9,7 @@ export enum CategoryId {
 export enum OrderType {
   DINE_IN = "dine_in",
   EXPRESS = "express",
+  WINDOW = "window",
 }
 
 export enum OrderStatus {
@@ -88,6 +89,8 @@ export interface Order {
   sinpeReference?: string;
   sinpeReceiptImage?: string; // base64 screenshot uploaded on Express SINPE orders
   cashChangeFor?: number;
+  cashReceived?: number;
+  changeGiven?: number;
   isPaid: boolean;
   // Status & Timestamps
   status: OrderStatus;
@@ -108,6 +111,10 @@ export interface RestaurantSettings {
   expressDeliveryFee: number;
   expressRadiusKm: number;
   dailySpecialDescription: string;
+  expressOpen?: string;
+  expressClose?: string;
+  expressDays?: number[];
+  expressTemporarilyClosed?: boolean;
 }
 
 export interface AppStatePayload {
