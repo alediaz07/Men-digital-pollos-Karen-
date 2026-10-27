@@ -86,7 +86,7 @@ export const KitchenKDSView: React.FC<KitchenKDSViewProps> = ({
               Cocina al día — Sin comandas en preparación
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
-              Cuando Recepción apruebe un pedido de Mesa o de Servicio Exprés, aparecerá inmediatamente en esta pantalla.
+              Los pedidos autorizados de mesa, ventana o exprés aparecerán aquí al instante.
             </p>
           </div>
         ) : (
@@ -120,7 +120,7 @@ export const KitchenKDSView: React.FC<KitchenKDSViewProps> = ({
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-sm font-extrabold uppercase">
                             <Utensils className="w-4 h-4" />
-                            {order.tableName || 'MESA'}
+                            {order.orderType === OrderType.WINDOW ? "VENTANA" : order.tableName || "MESA"}
                           </span>
                         )}
                       </div>
@@ -138,7 +138,7 @@ export const KitchenKDSView: React.FC<KitchenKDSViewProps> = ({
                       <span>
                         {isExpress
                           ? `Para llevar (Exprés) · ${order.customerName || 'Cliente'}`
-                          : `Servir en salón · ${order.tableName}`}
+                          : order.orderType === OrderType.WINDOW ? "Entregar en ventana" : `Servir en salón · ${order.tableName}`}
                       </span>
                       <span className="font-mono font-bold text-slate-200">
                         {totalDishes} {totalDishes === 1 ? 'plato' : 'platos'}
@@ -217,7 +217,7 @@ export const KitchenKDSView: React.FC<KitchenKDSViewProps> = ({
                       #{order.orderNumber} ·{' '}
                       {order.orderType === OrderType.DINE_IN
                         ? order.tableName
-                        : 'EXPRÉS'}
+                        : order.orderType === OrderType.WINDOW ? 'VENTANA' : 'EXPRÉS'}
                     </span>
                     <span className="text-xs text-slate-400">
                       {getElapsedMinutes(order.readyAt)}

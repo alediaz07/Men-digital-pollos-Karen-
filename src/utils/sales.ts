@@ -42,6 +42,7 @@ export function sales(orders: Order[], from: string, to: string) {
   ) => list.reduce((n, o) => n + o[key], 0);
   const dine = paid.filter((o) => o.orderType === OrderType.DINE_IN);
   const express = paid.filter((o) => o.orderType === OrderType.EXPRESS);
+  const window = paid.filter((o) => o.orderType === OrderType.WINDOW);
   return {
     history,
     totalOrders: history.length,
@@ -57,6 +58,8 @@ export function sales(orders: Order[], from: string, to: string) {
     totalRevenue: sum(paid),
     dineInCount: dine.length,
     dineInRevenue: sum(dine),
+    windowCount: window.length,
+    windowRevenue: sum(window),
     expressCount: express.length,
     expressRevenue: sum(express),
     totalServiceCharge: sum(paid, "serviceFee"),

@@ -96,6 +96,8 @@ test(
       await expect(
         publicPage.getByRole("link", { name: "Administración", exact: true }),
       ).toHaveCount(0);
+      await expect(publicPage).toHaveURL(new RegExp("/expres$"));
+      await expect(publicPage.getByLabel("Usuario", { exact: true })).toHaveCount(0);
       await expect(publicPage.getByRole("combobox")).toHaveCount(0);
       assert.ok(
         await publicPage.evaluate(
@@ -110,9 +112,8 @@ test(
       });
       const adm = await page();
       await login(adm, "/admin", "admin");
-      await expect(
-        adm.getByAltText("QR Mesa 3", { exact: true }),
-      ).toBeVisible();
+      await adm.getByRole("button", { name: "Mesas y Códigos QR" }).click();
+      await expect(adm.getByAltText("QR Mesa 3", { exact: true })).toBeVisible();
       const token = await adm.evaluate(async () => {
         const s = await fetch("/api/state").then((r) => r.json());
         return s.tables.find((t: any) => t.number === 3).qrToken;
@@ -169,12 +170,11 @@ test(
       await expect(
         rec.getByRole("button", { name: "Marcar Entregado", exact: true }),
       ).toBeVisible();
-      await rec
-        .getByRole("button", { name: "Cobrar en Caja", exact: true })
-        .click();
-      await rec
-        .getByRole("button", { name: "Registrar Pago (₡3.300)", exact: true })
-        .click();
+      await adm.getByRole("button", { name: "Caja / Mesas" }).click();
+      await adm.getByRole("button", { name: /Ver cuenta y cobrar/ }).click();
+      await adm.getByLabel("¿Con cuánto está pagando?").fill("5000");
+      await expect(adm.getByText("Vuelto a entregar: ₡1.700")).toBeVisible();
+      await adm.getByRole("button", { name: /Registrar pago de ₡3.300/ }).click();
       await rec
         .getByRole("button", { name: "Marcar Entregado", exact: true })
         .click();
@@ -190,6 +190,7 @@ test(
         )
         .fill("Dirección de prueba aislada");
       await publicPage.getByRole("button", { name: /Efectivo/ }).click();
+      await publicPage.getByPlaceholder(/Ej. 5000 o 10000/).fill("5000");
       await expect(
         publicPage.getByRole("button", {
           name: "Confirmar Pedido Exprés (₡3.500)",
@@ -221,6 +222,11 @@ test(
         path: ".tools/screenshots/admin-sales.png",
         fullPage: true,
       });
+      await adm.getByRole("button", { name: "Punto de venta" }).click();
+      await adm.getByRole("button", { name: /POLLO FRITO/ }).first().click();
+      await adm.getByRole("button", { name: "Autorizar y enviar a cocina" }).click();
+      await expect(adm.getByRole("status").filter({hasText:/Tiquete #/})).toBeVisible();
+      await expect(kds.getByText("VENTANA", {exact:true}).first()).toBeVisible();
       for (const width of [375, 768, 1280]) {
         await publicPage.setViewportSize({ width, height: 900 });
         assert.ok(

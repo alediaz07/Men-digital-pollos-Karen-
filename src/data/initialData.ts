@@ -11,6 +11,10 @@ export const INITIAL_SETTINGS: RestaurantSettings = {
   serviceChargePercent: 10,
   expressDeliveryFee: 500,
   expressRadiusKm: 1,
+  expressOpen: "07:00",
+  expressClose: "16:00",
+  expressDays: [1,2,3,4,5],
+  expressTemporarilyClosed: false,
   dailySpecialDescription: 'Especialidad del día recién preparada · Incluye té frío bien frío',
 };
 

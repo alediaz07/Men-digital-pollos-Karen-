@@ -19,6 +19,10 @@ const desiredRole = (
 const internal = !!desiredRole;
 const stateUrl = internal ? "/api/state" : "/api/state?scope=customer";
 const tableToken = new URLSearchParams(window.location.search).get("qr");
+const legacyTableLink = route === "/" && !!tableToken;
+const isTableView = route === "/mesa" || legacyTableLink;
+const isExpressView = route === "/expres" || (route === "/" && !tableToken);
+const validCustomerRoute = isTableView || isExpressView;
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
@@ -26,6 +30,8 @@ export default function App() {
   const [table, setTable] = useState<RestaurantTable | null>(null);
   const [qrReady, setQrReady] = useState(!tableToken);
   const [qrError, setQrError] = useState("");
+  const [expressOpen, setExpressOpen] = useState(false);
+  const [expressNotice, setExpressNotice] = useState("");
   const [error, setError] = useState("");
   const [connected, setConnected] = useState(false);
   const [toast, setToast] = useState("");
@@ -33,6 +39,7 @@ export default function App() {
   const soundRef = useRef(false);
   const ordersRef = useRef<Order[] | null>(null);
   const allowed = user && (user.role === "admin" || user.role === desiredRole);
+  const readyOrders = internal && desiredRole !== "kitchen" ? (state?.orders || []).filter(o=>o.status==="ready") : [];
   useEffect(() => {
     const reject = (event: PromiseRejectionEvent) => {
       event.preventDefault();
@@ -46,12 +53,21 @@ export default function App() {
         setSessionReady(true);
       })
       .catch((e) => setError(e.message));
-    if (tableToken)
+    if (isTableView && !tableToken) { setQrError("Debes escanear el QR de una mesa."); setQrReady(true); }
+    if (isTableView && tableToken)
       api(`/api/table/${encodeURIComponent(tableToken)}`)
         .then(setTable)
         .catch((e) => setQrError(e.message))
         .finally(() => setQrReady(true));
+    if (route === "/") window.history.replaceState({}, "", legacyTableLink ? "/mesa"+window.location.search : "/expres");
     return () => window.removeEventListener("unhandledrejection", reject);
+  }, []);
+  useEffect(() => {
+    if (!isExpressView || internal) return;
+    const check=()=>api<{open:boolean}>("/api/express/status").then(x=>setExpressOpen(x.open)).catch(()=>setExpressOpen(false));
+    void check();
+    const id=setInterval(check,30000);
+    return ()=>clearInterval(id);
   }, []);
   useEffect(() => {
     if (!sessionReady || (internal && !allowed)) return;
@@ -145,7 +161,9 @@ export default function App() {
     await refresh();
   }
   async function submitOrder(payload: Partial<Order>) {
-    const body = { ...payload, tableToken: tableToken || undefined };
+    if (!internal && !validCustomerRoute) throw new Error("Acceso público inválido.");
+    if (isExpressView && !expressOpen) throw new Error("El servicio exprés está cerrado.");
+    const body = { ...payload, orderType:isTableView?OrderType.DINE_IN:OrderType.EXPRESS, tableToken: isTableView ? tableToken || undefined : undefined };
     const serialized = JSON.stringify(body);
     let pending: { body: string; key: string } | null = null;
     try {
@@ -225,6 +243,11 @@ export default function App() {
           {error} <button onClick={() => setError("")}>Cerrar</button>
         </div>
       )}
+      {readyOrders.length > 0 && (
+        <div role="status" className="sticky top-0 z-40 bg-amber-100 border-y-2 border-amber-400 p-4 font-bold text-amber-950 text-center">
+          ¡Listo para recoger en cocina! {readyOrders.slice(0,5).map(o=>`#${o.orderNumber} ${o.tableName|| (o.orderType===OrderType.WINDOW?"Ventana":"Exprés")}`).join(" · ")}
+        </div>
+      )}
       {toast && (
         <div role="status" className="p-3 bg-emerald-100">
           {toast} <button onClick={() => setToast("")}>OK</button>
@@ -250,18 +273,21 @@ export default function App() {
         <p className="p-6">Cargando…</p>
       ) : qrError && !internal ? (
         <div role="alert" className="p-6">
-          {qrError} <a href="/">Ir al menú exprés</a>
+          {qrError} Solicita un QR vigente al personal.
         </div>
+      ) : !internal && !validCustomerRoute ? (
+        <div role="alert" className="p-6">Página no encontrada.</div>
       ) : (
         <main className="flex-1">
-          {!internal && (
+          {!internal && validCustomerRoute && (
             <CustomerMenuView
               menu={state.menu}
               tables={table ? [table] : []}
               settings={state.settings}
               orders={state.orders}
               selectedTableId={table?.id || null}
-              initialMode={table ? OrderType.DINE_IN : OrderType.EXPRESS}
+              initialMode={isTableView ? OrderType.DINE_IN : OrderType.EXPRESS}
+              expressOpen={isExpressView ? expressOpen : true}
               onSubmitOrder={submitOrder}
             />
           )}
@@ -292,11 +318,14 @@ export default function App() {
               onSaveSettings={(b) => mutate("/api/settings", "PUT", b)}
               onSimulateScanTable={(id) => {
                 const t = state.tables.find((t) => t.id === id);
-                location.href = `/?qr=${encodeURIComponent(t?.qrToken || "")}`;
+                location.href = `/mesa?qr=${encodeURIComponent(t?.qrToken || "")}`;
               }}
               onSimulateExpress={() => {
-                location.href = "/";
+                location.href = "/expres";
               }}
+              onUpdateOrder={(id,b)=>mutate(`/api/orders/${id}`,"PATCH",b)}
+              onCreatePOS={(payload)=>api<Order>("/api/admin/pos/orders","POST",payload)}
+              onCheckout={(payload)=>api("/api/admin/checkout","POST",payload)}
             />
           )}
         </main>

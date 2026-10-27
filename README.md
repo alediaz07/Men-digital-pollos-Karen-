@@ -1,6 +1,6 @@
 # Pollos Karen — Menú digital QR + KDS
 
-Sistema de pedidos en mesa y exprés para Pollos Karen, con recepción, cocina (KDS), caja, productos, mesas, estadísticas y control básico de inventarios y recetas.
+Sistema de pedidos en mesa, exprés y ventana para Pollos Karen, con tablet de Administración/POS, tablet de Cocina (KDS), caja, productos, mesas y estadísticas. **Inventario en pausa**.
 
 ## Instalación local
 
@@ -27,11 +27,22 @@ npm run test:browser
 
 El flujo: Cliente QR → recepción → cocina → listo → entrega / caja. Para cobrar SINPE es obligatorio verificar el ingreso en la cuenta bancaria e indicar una referencia bancaria que no se haya usado en otro pedido.
 
-## Control de insumos
+## Modalidades, entradas y permisos
+- **Mesas:** `/mesa?qr=TOKEN` (solo QR activo de cada mesa, sin navegación a exprés ni administración). Aplica +10% por servicio de mesa conforme a la configuración actual.
+- **Exprés:** `/expres` (solo menú público de domicilio). Aplica envío de ₡500 dentro de cobertura de 1 km, verificada por Administración. SINPE: captura + confirmación bancaria antes de cocina. Efectivo: se declara el monto para calcular el vuelto; cobro queda pendiente hasta entrega.
+- **Administración/POS:** `/admin` (privado, rol administrador). Incluye comandas de ventana, mesa, envío a cocina, cuenta consolidada por mesa, caja con efectivo recibido y vuelto, comprobación SINPE, ventas y ajustes de horario exprés.
+- **Recepción:** `/recepcion` (privado, rol recepción). Recibe y autoriza pedidos; las mesas se cobran juntas desde la Caja administrativa.
+- **Cocina:** `/cocina` (privado, rol cocina). Solo recibe pedidos autorizados y marca "Listo"; no tiene acceso a precios, administración, caja o información del cliente.
+Los clientes nunca reciben enlaces ni formularios de acceso al personal; cambiar manualmente la URL no otorga permisos. El QR es un token de mesa: si se comparte, podría utilizarse desde otro lugar, pero siempre requerirá aprobación interna antes de cocina.
 
-El administrador dispone de **Inventario y recetas**. Permite registrar insumos, mínimos, unidades, ajustes positivos y negativos con motivo, y una receta por platillo. Al enviar un pedido a cocina se descuenta la receta exactamente una vez. Si no alcanza el stock, no se aprueba el pedido. **Los productos sin receta no descuentan ingredientes**: ingresa los datos reales antes de utilizarlos.
+## Horario del exprés
+De lunes a viernes de **7:00 a.m. a 4:00 p.m.** hora de Costa Rica. **Sábado y domingo cerrado**. Fuera de ese rango muestra un cartel "Servicio exprés cerrado", permite consultar el menú y bloquea órdenes nuevas tanto en pantalla como en servidor. Administración puede modificar días/horas y aplicar cierre temporal para feriados sin cambiar código.
 
-Los cambios de estados, pagos, cobertura, existencias y recetas generan una bitácora interna consultable por administrador en `/api/admin/audit`. Los KPIs financieros básicos están en `/api/admin/kpis`.
+## Pago y caja
+Los pedidos primero llegan a Administración/Recepción. Al ser autorizados pasan al KDS; Cocina pulsa "Listo" y Administración recibe actualización. El pago puede registrarse antes o después de preparar/entregar, sin conexión con datáfono. Las órdenes pueden acumularse por mesa y cerrarse en **un solo cobro**; al pagar efectivo se exige ingresar el importe recibido y se calcula el vuelto. Las ventas de ventana se cobran sin 10% ni tarifa exprés, al principio o al final, manteniendo el estado "Pendiente de pago" hasta registrar el cobro real.
+
+## Inventario pausado
+La información de insumos y recetas existente se conserva, pero se ha ocultado la sección del menú administrativo y **no se descuenta ni bloquea stock al aprobar un pedido**. Se retomará su diseño cuando el restaurante defina la forma de control.
 
 ## Datos y respaldos cifrados
 
@@ -51,8 +62,8 @@ Para restaurar, detener el servidor, configurar `ALLOW_RESTORE=YES`, usar la mis
 - Configurar `PUBLIC_ORIGIN` HTTPS, `DATA_DIR` absoluto, `DURABLE_STORAGE_CONFIRMED=true`, `NODE_ENV=production`, contraseñas y usuario administrador seguro.
 - Verificar fiscalización y facturación electrónica con un proveedor autorizado antes de usar como comprobante fiscal.
 - El servicio del 10% en mesas requiere revisar el procedimiento de servicio y la liquidación laboral aplicable en Costa Rica; el indicador `serviceFeesHeld` no es ganancia del restaurante.
-- La verificación SINPE y la cobertura exprés son manuales; no se han integrado servicios bancarios ni mapas de geocodificación.
-- No están implementados completamente: arqueos, reembolsos conciliados, caja dividida, pedidos presenciales, retención/borrado automático de datos personales ni alertas externas. El encargado del negocio debe completar información y política de privacidad, probar copias externas y verificar el sistema en dispositivos reales.
+- La verificación SINPE y la cobertura exprés son manuales; no se han integrado servicios bancarios ni mapas de geocodificación. La verificación geográfica no puede garantizarse por URL; la autorización interna sigue siendo necesaria.
+- No están implementados completamente: arqueos de caja por turno, reembolsos conciliados, cuentas divididas, retención/borrado automático de datos personales ni alertas externas. El POS de ventana sí permite registrar pedidos presenciales. El encargado del negocio debe completar información y política de privacidad, probar copias externas y verificar el sistema en dispositivos reales.
 
 Consulta también `docs/OPERACION.md` y `docs/AUDITORIA.md` para los controles previos.
 

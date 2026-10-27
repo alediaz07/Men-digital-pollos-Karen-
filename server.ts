@@ -4,6 +4,7 @@ import express from "express";
 import { createServer } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import path from "node:path";
+import { expressAvailability } from "./src/utils/expressHours.ts";
 import fs from "node:fs";
 import {
   loadStore,
@@ -335,6 +336,7 @@ app.post("/api/logout", (req, res) => {
   res.json({ ok: true });
 });
 app.get("/api/state", (req, res) => res.json(state(req)));
+app.get("/api/express/status", (_req,res) => { const info=expressAvailability(store.settings); res.json({...info,open:process.env.TEST_MODE === "true" ? true : info.open}); });
 app.get("/api/table/:token", (req, res) => {
   const t = store.tables.find(
     (t) => t.active && t.qrToken === req.params.token,
@@ -399,6 +401,8 @@ app.post("/api/orders", (req, res) => {
   if ((b.tableToken && !table) || (b.orderType === OrderType.DINE_IN && !table))
     fail("QR inválido o revocado.");
   const orderType = table ? OrderType.DINE_IN : OrderType.EXPRESS;
+  if (b.orderType !== orderType) fail("La modalidad del pedido no coincide con el acceso utilizado.");
+  if (orderType === OrderType.EXPRESS && process.env.TEST_MODE !== "true" && !expressAvailability(store.settings).open) fail("Exprés cerrado. Pedidos de lunes a viernes de 7:00 a.m. a 4:00 p.m.", 403);
   const items = b.items.map((item: any) => {
     const product = store.menu.find(
       (p) => p.id === item.menuItemId && p.available,
@@ -454,6 +458,8 @@ app.post("/api/orders", (req, res) => {
     fail("Adjunta el comprobante para revisión.");
   const cashChangeFor =
     b.cashChangeFor == null ? undefined : money(b.cashChangeFor);
+  if (!table && b.paymentMethod === PaymentMethod.EFECTIVO && cashChangeFor == null)
+    fail("Indica con cuánto efectivo pagarás para preparar el vuelto.");
   if (
     cashChangeFor != null &&
     cashChangeFor < subtotal + serviceFee + deliveryFee
@@ -560,6 +566,8 @@ app.patch("/api/orders/:id", operations, (req, res) => {
       updated.coverageStatus !== "verified"
     )
       fail("Verifica la dirección y cobertura antes de aprobar.");
+    if (b.status === OrderStatus.IN_KITCHEN && o.orderType === OrderType.EXPRESS && o.paymentMethod === PaymentMethod.SINPE && !o.isPaid && !(b.isPaid === true && b.sinpeVerified === true))
+      fail("Verifica el abono SINPE antes de autorizar exprés.",409);
     updated.status = b.status;
     if (b.status === OrderStatus.IN_KITCHEN) updated.sentToKitchenAt = now;
     if (b.status === OrderStatus.READY) updated.readyAt = now;
@@ -605,7 +613,7 @@ app.patch("/api/orders/:id", operations, (req, res) => {
     updated.paidBy = user.username;
   }
   commit((s) => {
-    if (updated.status === OrderStatus.IN_KITCHEN && o.status !== updated.status) consumeRecipe(s, updated, user.username);
+    // Inventario en pausa: no descontar ni bloquear aprobaciones de cocina.
     s.orders[s.orders.findIndex((x) => x.id === o.id)] = updated;
     if (updated.status !== o.status) audit(s,o.id,"status",user.username,`${o.status} → ${updated.status}: ${updated.cancellationReason || ""}`);
     if (!o.isPaid && updated.isPaid) audit(s,o.id,"payment",user.username,`${updated.paymentMethod}: ${updated.total}`);
@@ -615,6 +623,71 @@ app.patch("/api/orders/:id", operations, (req, res) => {
     user.role === "kitchen" ? kitchenOrder(updated) : operationalOrder(updated),
   );
 });
+// POS interno. El servidor controla precios, mesa, autorización y modalidad.
+app.post("/api/admin/pos/orders", permit("admin","reception"), (req,res) => {
+  const b=req.body, operator=staff(req)!;
+  if (!Array.isArray(b.items) || b.items.length<1 || b.items.length>100) fail("Agrega productos al tiquete.");
+  const isTable=b.orderType===OrderType.DINE_IN, isWindow=b.orderType===OrderType.WINDOW;
+  if (!isTable && !isWindow) fail("Modalidad POS inválida.");
+  const table=isTable ? store.tables.find(t=>t.id===b.tableId && t.active) : undefined;
+  if (isTable && !table) fail("Selecciona una mesa activa.");
+  const items=b.items.map((item:any)=>{
+    const product=store.menu.find(p=>p.id===item.menuItemId && p.available);
+    if (!product || !withinSchedule(product.scheduleText)) fail("Producto agotado o fuera de horario.");
+    if (!Number.isInteger(item.quantity) || item.quantity<1 || item.quantity>99) fail("Cantidad inválida.");
+    if(product.variants?.length ? !product.variants.includes(item.selectedVariant) : !!item.selectedVariant) fail("Selecciona variante válida.");
+    return {id:randomUUID(),menuItemId:product.id,name:product.name,price:product.price,quantity:item.quantity,selectedVariant:item.selectedVariant,notes:text(item.notes,500)};
+  });
+  const subtotal=items.reduce((sum:number,i:any)=>sum+i.price*i.quantity,0);
+  const serviceFee=isTable ? Math.round(subtotal*store.settings.serviceChargePercent/100):0;
+  const authorized=b.authorize===true;
+  const order:Order={
+    id:randomUUID(),orderNumber:store.nextOrderNumber,orderType:b.orderType,tableId:table?.id,tableName:table?.name,
+    customerName:text(b.customerName,100),items,subtotal,serviceFee,deliveryFee:0,total:subtotal+serviceFee,
+    paymentMethod:PaymentMethod.PENDING_CAJA,isPaid:false,status:authorized?OrderStatus.IN_KITCHEN:OrderStatus.PENDING_RECEPTION,
+    createdAt:new Date().toISOString(),sentToKitchenAt:authorized?new Date().toISOString():undefined,
+    isTest:process.env.TEST_MODE==="true"
+  };
+  commit(next=>{next.nextOrderNumber++;next.orders.unshift(order);audit(next,order.id,authorized?"pos_authorized":"pos_created",operator.username,b.orderType);});
+  res.status(201).json(operationalOrder(order));
+});
+// Registro de caja sin integración bancaria/TPV. Una sola transacción puede cerrar varias rondas de una misma mesa.
+app.post("/api/admin/checkout", permit("admin","reception"), (req,res)=>{
+  const b=req.body;
+  if (!Array.isArray(b.orderIds)||!b.orderIds.length||b.orderIds.length>100||new Set(b.orderIds).size!==b.orderIds.length) fail("Selecciona tiquetes válidos.");
+  const orders=b.orderIds.map((id:string)=>store.orders.find(o=>o.id===id));
+  if(orders.some((o:Order|undefined)=>!o||o.isPaid||o.status===OrderStatus.CANCELLED))fail("Algún tiquete ya fue cobrado o cancelado.",409);
+  const chosen=orders as Order[], first=chosen[0];
+  if(first.orderType===OrderType.DINE_IN) {
+    if(chosen.some(o=>o.orderType!==OrderType.DINE_IN||o.tableId!==first.tableId))fail("No se pueden mezclar mesas o modalidades.");
+    const remaining=store.orders.filter(o=>o.orderType===OrderType.DINE_IN&&o.tableId===first.tableId&&!o.isPaid&&o.status!==OrderStatus.CANCELLED);
+    if(remaining.some(o=>!b.orderIds.includes(o.id)))fail("Para cerrar la mesa hay que incluir todos los tiquetes pendientes.",409);
+  } else if(chosen.length!==1)fail("Las ventas de ventana y exprés se cobran por tiquete.");
+  const method=b.paymentMethod;
+  if(![PaymentMethod.EFECTIVO,PaymentMethod.SINPE,PaymentMethod.TARJETA].includes(method))fail("Método de pago inválido.");
+  const total=chosen.reduce((sum,o)=>sum+o.total,0);
+  const cashReceived=method===PaymentMethod.EFECTIVO ? money(b.cashReceived) : undefined;
+  if(method===PaymentMethod.EFECTIVO && cashReceived!<total)fail("Efectivo insuficiente.");
+  const reference=method===PaymentMethod.SINPE ? text(b.sinpeReference,100,true) : undefined;
+  if(method===PaymentMethod.SINPE){
+    if(!b.sinpeVerified || !reference || reference.length<4)fail("Verifica el banco e introduce referencia SINPE.");
+    if(store.orders.some(o=>o.isPaid&&o.paymentMethod===PaymentMethod.SINPE&&o.sinpeReference?.trim().toLowerCase()===reference.toLowerCase())) fail("Referencia SINPE ya registrada.",409);
+  }
+  const now=new Date().toISOString(),actor=staff(req)!.username,txId=randomUUID();
+  const changeGiven=cashReceived==null?undefined:cashReceived-total;
+  commit(next=>{
+    for(const selected of chosen){
+      const target=next.orders.find(o=>o.id===selected.id)!;
+      target.isPaid=true;target.paymentMethod=method;target.paidAt=now;target.paidBy=actor;
+      if(method===PaymentMethod.SINPE){target.sinpeReference=reference;target.sinpeVerified=true;}
+      audit(next,target.id,"checkout",actor,txId);
+    }
+    next.cashTransactions.unshift({id:txId,orderIds:b.orderIds,total,method,cashReceived,changeGiven,sinpeReference:reference,createdAt:now,actor});
+  });
+  res.json({ok:true,transactionId:txId,total,cashReceived,changeGiven,paidOrders:b.orderIds});
+});
+app.get("/api/admin/checkout/history",permit("admin","reception"),(_req,res)=>res.json(store.cashTransactions.slice(0,200)));
+
 app.delete("/api/orders/:id", admin, (_req, _res) =>
   fail(
     "El historial se conserva. Cancela pedidos pendientes desde recepción.",
@@ -751,11 +824,21 @@ app.put("/api/settings", admin, (req, res) => {
       if (v !== 10) fail("El servicio de mesa debe ser 10%.");
       next[k] = 10;
     } else if (k === "expressDeliveryFee") next[k] = money(v);
-    else if (k === "expressRadiusKm") {
+    else if (k === "expressDays") {
+      if (!Array.isArray(v) || !v.length || v.some((d:any)=>!Number.isInteger(d)||d<0||d>6)||new Set(v).size!==v.length) fail("Días de exprés inválidos.");
+      next.expressDays = v as number[];
+    } else if (k === "expressTemporarilyClosed") {
+      if (typeof v !== "boolean") fail("Cierre temporal inválido.");
+      next.expressTemporarilyClosed = v;
+    } else if (k === "expressOpen" || k === "expressClose") {
+      if (typeof v !== "string" || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v)) fail("Hora inválida.");
+      next[k] = v;
+    } else if (k === "expressRadiusKm") {
       if (typeof v !== "number" || v <= 0 || v > 100) fail("Radio inválido.");
       next[k] = v;
     } else (next as any)[k] = text(v, 1000, true);
   }
+  if (next.expressOpen && next.expressClose && next.expressOpen >= next.expressClose) fail("Hora de cierre debe ser posterior a apertura.");
   commit((s) => {
     s.settings = next;
   });
