@@ -575,6 +575,7 @@ test("Comprobantes privados, acceso público explícito y WebSocket rechaza otro
   });
 });
 test("Inventario: recetas, descuento único al aprobar y bloqueo por falta de insumos", async () => {
+  await reception.init("reception");
   const liveTableToken = (await admin.req("/api/state")).data.tables.find((t:any)=>t.number===3).qrToken;
   const created = await admin.req("/api/admin/inventory/ingredient", "POST", {
     name: "Pollo de prueba", unit: "g", quantity: 400, minimum: 50,
