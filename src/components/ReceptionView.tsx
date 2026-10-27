@@ -537,9 +537,7 @@ export const ReceptionView: React.FC<ReceptionViewProps> = ({
                         >
                           <Banknote className="w-4 h-4" />
                           <span>
-                            {order.orderType === OrderType.DINE_IN
-                              ? 'Cobrar en Caja'
-                              : 'Confirmar Pago'}
+                            {order.orderType === OrderType.WINDOW ? 'Cobrar ventana' : 'Confirmar pago exprés'}
                           </span>
                         </button>
                       )}
