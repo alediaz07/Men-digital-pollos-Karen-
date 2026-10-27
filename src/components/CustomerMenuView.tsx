@@ -460,7 +460,8 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
             <button
               type="button"
               onClick={() => handleOpenItemModal(platoDelDia)}
-              className="px-5 py-3 bg-[#C81E1E] hover:bg-[#A91919] text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
+              disabled={initialMode === OrderType.EXPRESS && !expressOpen}
+              className="disabled:opacity-50 disabled:cursor-not-allowed px-5 py-3 bg-[#C81E1E] hover:bg-[#A91919] text-white font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               Pedir Plato del Día
@@ -540,6 +541,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {categoryItems.map((item) => {
+                    const canOrder = item.available && (initialMode !== OrderType.EXPRESS || expressOpen);
                     const inCartCount = cart
                       .filter((c) => c.menuItemId === item.id)
                       .reduce((sum, c) => sum + c.quantity, 0);
@@ -547,9 +549,9 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
                     return (
                       <div
                         key={item.id}
-                        onClick={() => item.available && handleOpenItemModal(item)}
+                        onClick={() => canOrder && handleOpenItemModal(item)}
                         className={`bg-white border rounded-2xl p-4 sm:p-5 flex flex-col justify-between transition-all ${
-                          item.available
+                          canOrder
                             ? 'border-stone-200 hover:border-[#C81E1E]/60 hover:-translate-y-0.5 cursor-pointer'
                             : 'border-stone-200 opacity-60 cursor-not-allowed'
                         }`}
@@ -584,7 +586,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
                               : 'Agotado temporalmente'}
                           </span>
 
-                          {item.available ? (
+                          {canOrder ? (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -602,7 +604,7 @@ export const CustomerMenuView: React.FC<CustomerMenuViewProps> = ({
                             </button>
                           ) : (
                             <span className="text-xs font-semibold text-stone-400">
-                              No disponible
+                              {initialMode === OrderType.EXPRESS && !expressOpen ? 'Servicio cerrado' : 'No disponible'}
                             </span>
                           )}
                         </div>
