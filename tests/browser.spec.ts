@@ -190,6 +190,7 @@ test(
         )
         .fill("Dirección de prueba aislada");
       await publicPage.getByRole("button", { name: /Efectivo/ }).click();
+      await publicPage.getByPlaceholder(/Ej. 5000 o 10000/).fill("5000");
       await expect(
         publicPage.getByRole("button", {
           name: "Confirmar Pedido Exprés (₡3.500)",
