@@ -20,6 +20,7 @@ jobs:
       - run: npm run build
       - run: npm run build:cloudflare
       - run: npx --yes wrangler@4 deploy --dry-run --outdir .wrangler-dry-run
+      - run: node scripts/test-cloudflare.mjs
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
