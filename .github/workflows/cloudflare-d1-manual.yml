@@ -1,0 +1,55 @@
+name: "Cloudflare D1 | migración manual"
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Primero inspeccionar; aplicar cambia la estructura remota de D1"
+        required: true
+        default: "inspeccionar"
+        type: choice
+        options:
+          - inspeccionar
+          - aplicar
+      confirmation:
+        description: "Solo al aplicar: escribe APLICAR-POLLOS-KAREN"
+        required: false
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: pollos-karen-d1-migrations
+  cancel-in-progress: false
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      OPERATION: ${{ inputs.operation }}
+      CONFIRMATION: ${{ inputs.confirmation }}
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - name: Comprobar confirmación y credenciales
+        run: |
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "::error::Faltan CLOUDFLARE_API_TOKEN o CLOUDFLARE_ACCOUNT_ID en Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          if [[ "$OPERATION" == "aplicar" && "$CONFIRMATION" != "APLICAR-POLLOS-KAREN" ]]; then
+            echo "::error::No se aplicó nada. Escribe la confirmación exacta APLICAR-POLLOS-KAREN."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Revisar migraciones D1 pendientes (solo lectura)
+        run: npx --yes wrangler@4 d1 migrations list pollos-karen-db --remote
+      - name: Aplicar migración remota D1 (requiere confirmación explícita)
+        if: ${{ inputs.operation == 'aplicar' && inputs.confirmation == 'APLICAR-POLLOS-KAREN' }}
+        run: npx --yes wrangler@4 d1 migrations apply pollos-karen-db --remote
+      - name: Comprobar tablas creadas (solo lectura)
+        if: ${{ inputs.operation == 'aplicar' }}
+        run: |
+          npx --yes wrangler@4 d1 execute pollos-karen-db --remote --command "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'pk_%' ORDER BY name;"
