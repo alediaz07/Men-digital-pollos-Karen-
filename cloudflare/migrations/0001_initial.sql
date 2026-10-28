@@ -112,3 +112,9 @@ BEGIN
   SELECT CASE WHEN (SELECT status FROM pk_orders WHERE id=NEW.order_id)='cancelled'
     THEN RAISE(ABORT,'El pedido está cancelado') END;
 END;
+
+CREATE TABLE IF NOT EXISTS pk_auth_attempts (
+  username TEXT PRIMARY KEY,
+  failures INTEGER NOT NULL DEFAULT 0,
+  blocked_until INTEGER NOT NULL DEFAULT 0
+);
