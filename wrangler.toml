@@ -1,0 +1,16 @@
+name = "pollos-karen-app"
+main = "cloudflare/src/worker.mjs"
+compatibility_date = "2026-10-27"
+
+# ID de la D1 creada por el restaurante, comprobado en su panel de Cloudflare.
+[[d1_databases]]
+binding = "DB"
+database_name = "pollos-karen-db"
+database_id = "d99819af-dece-4de3-9ac8-75c1b7ed39a5"
+migrations_dir = "cloudflare/migrations"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/setup"]
