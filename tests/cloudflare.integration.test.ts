@@ -67,6 +67,10 @@ test("Cloudflare D1: bootstrap, roles, QR, aprobación, cocina, mesa, cobro y an
   assert.equal(setup.status,200);
   const table=setup.data.tables.find((t:any)=>t.number===1);
   assert.ok(table.qrToken);
+  const dish=setup.data.menu.find((x:any)=>x.id==="cas-pollo-frito");
+  assert.ok(dish);
+  const enabled=await request(e,"/api/menu/item",{method:"POST",...admin,body:{...dish,scheduleText:"",available:true}});
+  assert.equal(enabled.status,200,JSON.stringify(enabled.data));
   assert.equal((await request(e,"/api/table/"+encodeURIComponent(table.qrToken))).status,200);
   const create=await request(e,"/api/admin/pos/orders",{method:"POST",...admin,body:{
     orderType:"window",items:[{menuItemId:"cas-pollo-frito",quantity:1}],authorize:true
