@@ -18,6 +18,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      - run: npm run build:cloudflare
+      - run: npx --yes wrangler@4 deploy --dry-run --outdir .wrangler-dry-run
       - run: npm test
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
