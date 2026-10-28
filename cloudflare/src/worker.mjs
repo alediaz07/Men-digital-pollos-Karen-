@@ -118,7 +118,7 @@ async function route(request,env){
   }
   if(method==="GET"&&path==="/api/setup/status"){
     const count=await env.DB.prepare("SELECT COUNT(*) AS n FROM pk_staff").first();
-    return json({needsSetup:count.n===0});
+    return json({needsSetup:count.n===0,bootstrapSecretConfigured:typeof env.BOOTSTRAP_SECRET==="string"&&env.BOOTSTRAP_SECRET.length>=32});
   }
   if(method==="POST"&&path==="/api/bootstrap"){
     if(!sameOrigin(request))error("Origen inválido.",403);
