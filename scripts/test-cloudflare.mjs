@@ -8,14 +8,14 @@ const secret="Only-for-local-test-bootstrapping-123456789";
 const subprocess=(args,timeout=120000)=>spawnSync("npx",["--yes","wrangler@4",...args],{encoding:"utf8",timeout,env:{...process.env,WRANGLER_SEND_METRICS:"false"}});
 const migration=subprocess(["d1","migrations","apply","pollos-karen-db","--local"],120000);
 assert.equal(migration.status,0,"D1 migration failed: "+migration.stderr+"\n"+migration.stdout);
-const server=spawn("npx",["--yes","wrangler@4","dev","--local","--ip","127.0.0.1","--port",String(port),"--var","BOOTSTRAP_SECRET:"+secret],{stdio:["ignore","pipe","pipe"],env:{...process.env,WRANGLER_SEND_METRICS:"false"}});
+const server=spawn("npx",["--yes","wrangler@4","dev","--local","--ip","127.0.0.1","--port",String(port),"--var","BOOTSTRAP_SECRET:"+secret],{stdio:["ignore","pipe","pipe"],detached:true,env:{...process.env,WRANGLER_SEND_METRICS:"false"}});
 let log="";
 server.stdout.on("data",b=>log+=b.toString());
 server.stderr.on("data",b=>log+=b.toString());
 try{
   let healthy=false;
   for(let i=0;i<140;i++){
-    try{const r=await fetch(host+"/api/health");if(r.ok){healthy=true;break;}}catch{}
+    try{const r=await fetch(host+"/api/health",{signal:AbortSignal.timeout(3000)});if(r.ok){healthy=true;break;}}catch{}
     await wait(200);
   }
   assert.ok(healthy,"Worker local no inició: "+log.slice(-3500));
@@ -25,7 +25,7 @@ try{
     if(cookie)headers["Cookie"]=cookie;
     if(csrf)headers["X-CSRF-Token"]=csrf;
     if(authorization)headers["Authorization"]=authorization;
-    const r=await fetch(host+path,{method,headers,body:body!==undefined?JSON.stringify(body):undefined});
+    const r=await fetch(host+path,{method,headers,body:body!==undefined?JSON.stringify(body):undefined,signal:AbortSignal.timeout(5000)});
     const data=await r.json().catch(()=>({}));
     return {status:r.status,data,cookie:r.headers.get("set-cookie")};
   }
@@ -76,5 +76,6 @@ try{
   assert.equal(avail.data.open,false);
   console.log("Cloudflare local smoke OK: D1, auth, POS, caja conjunta, CSRF, privacidad, cierre exprés.");
 }finally{
-  server.kill("SIGTERM");
+  try {process.kill(-server.pid,"SIGTERM");} catch {server.kill("SIGTERM");}
+  server.stdout.destroy();server.stderr.destroy();
 }
