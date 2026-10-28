@@ -100,6 +100,36 @@ export default function App() {
       ordersRef.current = data.orders;
       setState(data);
     };
+    // Cloudflare Workers Free: polling, sin WebSocket ni sesión Node en memoria.
+    if (import.meta.env.VITE_CF_WORKER === "true") {
+      const poll = async () => {
+        if (stopped) return;
+        try {
+          if (internal) {
+            const session = await api("/api/session");
+            if (!session.user || session.user.role !== user?.role) {
+              setUser(session.user);
+              setState(null);
+              setConnected(false);
+              return;
+            }
+          }
+          const incoming = await api<AppStatePayload & {revision:number}>(stateUrl);
+          apply(incoming);
+          setConnected(true);
+        } catch (e) {
+          setConnected(false);
+          setError(e instanceof Error ? e.message : "Error de conexión.");
+        }
+      };
+      void poll();
+      const interval = setInterval(poll, internal ? 8000 : 20000);
+      return () => {
+        stopped = true;
+        clearInterval(interval);
+        ordersRef.current = null;
+      };
+    }
     const connect = () => {
       ws = new WebSocket(
         `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws${internal ? "" : "?scope=customer"}`,
@@ -191,8 +221,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF8F5]">
       <header className="no-print bg-white border-b p-4 flex flex-wrap gap-4 items-center justify-between">
-        <a
-          href="/"
+        <div
           className="flex items-center gap-2 text-[#C81E1E] font-bold text-xl"
         >
           <img
@@ -201,7 +230,7 @@ export default function App() {
             alt="Pollos Karen"
           />
           Pollos Karen
-        </a>
+        </div>
         {internal && allowed && (
           <nav className="flex gap-4 flex-wrap text-sm font-bold">
             {(user.role === "admin" || user.role === "reception") && (
@@ -324,8 +353,8 @@ export default function App() {
                 location.href = "/expres";
               }}
               onUpdateOrder={(id,b)=>mutate(`/api/orders/${id}`,"PATCH",b)}
-              onCreatePOS={(payload)=>api<Order>("/api/admin/pos/orders","POST",payload)}
-              onCheckout={(payload)=>api("/api/admin/checkout","POST",payload)}
+              onCreatePOS={async (payload)=>{const order=await api<Order>("/api/admin/pos/orders","POST",payload);await refresh();return order;}}
+              onCheckout={async (payload)=>{const outcome=await api("/api/admin/checkout","POST",payload);await refresh();return outcome;}}
             />
           )}
         </main>
