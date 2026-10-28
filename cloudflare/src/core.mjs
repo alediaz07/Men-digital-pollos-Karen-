@@ -108,8 +108,8 @@ export async function menu(env) {
   return rs.results.map(x=>JSON.parse(x.json));
 }
 export async function allTables(env) {
-  const rs=await env.DB.prepare("SELECT id,number,name,active,qr_token AS qrToken FROM pk_tables ORDER BY number").all();
-  return rs.results.map(t=>({...t,capacity:4,active:!!t.active}));
+  const rs=await env.DB.prepare("SELECT id,number,name,capacity,active,qr_token AS qrToken FROM pk_tables ORDER BY number").all();
+  return rs.results.map(t=>({...t,active:!!t.active}));
 }
 export async function orders(env,sql,params=[]) {
   const rs=await env.DB.prepare(sql).bind(...params).all();
@@ -143,10 +143,11 @@ export async function bootstrap(env,username,password) {
   const entries=[
     env.DB.prepare("INSERT INTO pk_staff(id,username,password_hash,role,active,version) VALUES (?,?,?,'admin',1,1)").bind(adminId,username,ph),
     env.DB.prepare("INSERT INTO pk_settings(key,json) VALUES ('restaurant',?)").bind(JSON.stringify(await settings(env))),
-    env.DB.prepare("INSERT INTO pk_settings(key,json) VALUES ('revision','1')")
+    env.DB.prepare("INSERT INTO pk_settings(key,json) VALUES ('revision','1')"),
+    env.DB.prepare("INSERT INTO pk_settings(key,json) VALUES ('order_counter','0')")
   ];
   for(const p of INITIAL_MENU)entries.push(env.DB.prepare("INSERT INTO pk_menu(id,json) VALUES(?,?)").bind(p.id,JSON.stringify(p)));
-  for(const t of all)entries.push(env.DB.prepare("INSERT INTO pk_tables(id,number,name,qr_token_hash,qr_token) VALUES(?,?,?,?,?)").bind(t.id,t.number,t.name,await sha(t.qrToken),t.qrToken));
+  for(const t of all)entries.push(env.DB.prepare("INSERT INTO pk_tables(id,number,name,capacity,qr_token_hash,qr_token) VALUES(?,?,?,?,?,?)").bind(t.id,t.number,t.name,t.capacity||4,await sha(t.qrToken),t.qrToken));
   await env.DB.batch(entries);
   return {ok:true,user:username,seededMenu:INITIAL_MENU.length,seededTables:all.length};
 }
