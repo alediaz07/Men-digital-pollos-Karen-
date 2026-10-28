@@ -178,7 +178,7 @@ export async function updateOrder(env,orderId,b,user) {
     .bind(id(),user.username,payment?"payment":"status",o.id,o.status+" -> "+next.status,t));
   q.push(bump(env));
   const result=await env.DB.batch(q);
-  if(!result[q.length-3+(payment?0:2)]?.meta?.changes) {
+  if(!result[payment?2:0]?.meta?.changes) {
     // Presence of another concurrent update: refresh before continuing.
     error("El pedido cambió durante la operación; actualiza la pantalla.",409);
   }
