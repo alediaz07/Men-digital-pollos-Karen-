@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS pk_tables (
   id TEXT PRIMARY KEY,
   number INTEGER NOT NULL UNIQUE,
   name TEXT NOT NULL,
+  capacity INTEGER NOT NULL DEFAULT 4 CHECK(capacity > 0),
   qr_token_hash TEXT UNIQUE NOT NULL,
   qr_token TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
@@ -102,3 +103,12 @@ CREATE TABLE IF NOT EXISTS pk_audit (
 CREATE INDEX IF NOT EXISTS ix_pk_audit_date ON pk_audit(created_at);
 
 -- Inventario no está en operación. No se crean reglas de descuento.
+
+-- Los tiquetes pagados no pueden vincularse dos veces a un cobro.
+CREATE TRIGGER IF NOT EXISTS pk_prevent_double_payment BEFORE INSERT ON pk_payment_orders
+BEGIN
+  SELECT CASE WHEN (SELECT is_paid FROM pk_orders WHERE id=NEW.order_id)!=0
+    THEN RAISE(ABORT,'El pedido ya fue cobrado') END;
+  SELECT CASE WHEN (SELECT status FROM pk_orders WHERE id=NEW.order_id)='cancelled'
+    THEN RAISE(ABORT,'El pedido está cancelado') END;
+END;
