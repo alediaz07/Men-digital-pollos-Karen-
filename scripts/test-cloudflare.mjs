@@ -48,6 +48,10 @@ try{
   assert.ok(snapshot.data.tables.length>0);
   const table=snapshot.data.tables[0],dish=snapshot.data.menu.find(x=>x.available);
   assert.ok(table.qrToken&&dish);
+  // La prueba corre a cualquier hora; elimina el horario del platillo solo en la D1 local.
+  const edited=await request("/api/menu/item",{method:"POST",cookie:adminCookie,csrf:ccsrf,body:{...dish,scheduleText:""}});
+  assert.equal(edited.status,200,JSON.stringify(edited));
+
   const forbidden=await request("/api/admin/pos/orders",{method:"POST",cookie:customerCookie,csrf:ccsrf,body:{orderType:"window",items:[{menuItemId:dish.id,quantity:1}],authorize:true}});
   assert.equal(forbidden.status,403);
   const newOrder=async(quant)=>request("/api/admin/pos/orders",{method:"POST",cookie:adminCookie,csrf:ccsrf,body:{orderType:"dine_in",tableId:table.id,items:[{menuItemId:dish.id,quantity:quant,selectedVariant:dish.variants?.[0]}],authorize:true}});
