@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS pk_tables (
   number INTEGER NOT NULL UNIQUE,
   name TEXT NOT NULL,
   qr_token_hash TEXT UNIQUE NOT NULL,
+  qr_token TEXT NOT NULL,
   active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
 );
 
