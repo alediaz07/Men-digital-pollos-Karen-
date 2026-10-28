@@ -141,7 +141,7 @@ async function route(request,env){
   const pieces=splitPath(request),orderId=pieces[1]==="orders"?pieces[2]:null;
   if(method==="GET"&&pieces[0]==="api"&&orderId&&pieces.length===3){
     const o=await orderById(env,orderId);
-    if(!o||(!currentUser&&o.ownerHash!==currentClient?.hash))return fail("Pedido no encontrado.",404);
+    if(!o||(!currentUser&&(!currentClient||!o.ownerHash||o.ownerHash!==currentClient.hash)))return fail("Pedido no encontrado.",404);
     if(currentUser?.role==="kitchen")return ["in_kitchen","ready"].includes(o.status)?json({id:o.id,orderNumber:o.orderNumber,orderType:o.orderType,items:o.items,status:o.status,createdAt:o.createdAt}):fail("Pedido no encontrado.",404);
     return json(currentUser?{...o,ownerHash:undefined,sinpeReceiptImage:o.sinpeReceiptImage?"/api/orders/"+o.id+"/receipt":undefined}:((({ownerHash,requestKey,requestHash,sinpeReceiptImage,...rest})=>rest)(o)));
   }
